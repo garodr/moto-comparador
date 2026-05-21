@@ -35,11 +35,11 @@ const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   return terminosBusqueda.every((termino) => stringItem.includes(termino));
 };
 
-// Formateador exclusivo para Pesos Argentinos (Formato: $ 150.300 - Sin centavos)
+// Formateador exclusivo para Pesos Argentinos (Formato: $150.300 - Sin centavos)
 const formatearMonedaArgentina = (numero) => {
   if (numero === null || isNaN(numero)) return "S/D";
 
-  // Redondeamos al entero más cercano para eliminar los centavos molestos del Excel
+  // Redondeamos al entero más cercano para eliminar los centavos del Excel
   const numeroRedondeado = Math.round(numero);
 
   return (
@@ -49,6 +49,11 @@ const formatearMonedaArgentina = (numero) => {
       maximumFractionDigits: 0,
     })
   );
+};
+
+// Auxiliar para limpiar opciones rotas antes de calcular mínimos
+const obtenerOpcionesValidas = (opciones) => {
+  return opciones.filter((o) => o.precioNum !== null && !isNaN(o.precioNum));
 };
 
 // HEURÍSTICA DE AGRUPACIÓN: Junta los repuestos repetidos entre proveedores
@@ -69,19 +74,15 @@ const agruparPorProducto = (itemsFiltrados) => {
     let precioFinalNum = null;
 
     if (precioRaw !== "No disponible") {
-      // Si el Excel viene con formato de miles con puntos y centavos con coma (ej: 1.250,45),
-      // limpiamos los puntos, cambiamos la coma por un punto decimal y removemos signos extra.
       let limpio = String(precioRaw).trim();
 
-      // Si detectamos formato tradicional argentino (punto para miles, coma para decimales)
+      // Control de formato tradicional argentino (punto para miles, coma para decimales)
       if (limpio.includes(",") && limpio.includes(".")) {
         limpio = limpio.replace(/\./g, "").replace(/,/g, ".");
       } else if (limpio.includes(",")) {
-        // Si solo tiene coma, asumimos que es el separador decimal
         limpio = limpio.replace(/,/g, ".");
       }
 
-      // Filtramos para dejar solo números, signo menos o el punto decimal
       limpio = limpio.replace(/[^0-9.-]+/g, "");
       precioFinalNum = parseFloat(limpio);
     }
@@ -106,7 +107,8 @@ const agruparPorProducto = (itemsFiltrados) => {
   });
 
   return Object.values(grupos).map((grupo) => {
-    const opcionesConPrecio = groupOpcionesValidas(grupo.opciones);
+    // Usamos la función con su nuevo nombre en español y corregido
+    const opcionesConPrecio = obtenerOpcionesValidas(grupo.opciones);
 
     let precioMinimo = Infinity;
     let mejorProveedor = null;
@@ -146,11 +148,6 @@ const agruparPorProducto = (itemsFiltrados) => {
 
     return grupo;
   });
-};
-
-// Auxiliar para limpiar opciones rotas antes de calcular mínimos
-const groupOpcionesValidas = (opciones) => {
-  return opciones.filter((o) => o.precioNum !== null && !isNaN(o.precioNum));
 };
 
 // ==========================================
@@ -408,7 +405,6 @@ export default function App() {
                     </div>
 
                     <div className="text-right flex-shrink-0">
-                      {/* Formato de ARS aplicado acá */}
                       <span
                         className={`text-base font-black ${
                           opc.esElMasBarato ? "text-green-700" : "text-gray-900"
@@ -431,7 +427,7 @@ export default function App() {
 
           {productos.length > 0 && productosAgrupados.length === 0 && (
             <div className="text-center text-gray-400 py-10 bg-white rounded-xl border p-4 text-xs font-medium">
-              No hay開coincidencias para tu búsqueda comparativa.
+              No hay coincidencias para tu búsqueda comparativa.
             </div>
           )}
         </div>
