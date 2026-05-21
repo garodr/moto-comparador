@@ -1,16 +1,23 @@
-# React + Vite
+# Moto Comparador
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicación mobile-first para comparar precios de repuestos de motos desde archivos Excel.
 
-Currently, two official plugins are available:
+## Problema
+Los proveedores envían listas Excel con distintos formatos y trabajar con ellas desde el celular resulta incómodo.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Solución
+La app permite:
+- cargar archivos Excel
+- detectar encabezados automáticamente
+- buscar repuestos rápidamente
+- tolerar distintos formatos
+- comparar precios desde móvil
 
-## React Compiler
+## Stack
+- React
+- Vite
+- Tailwind CSS
+- SheetJS
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Estado actual
+MVP funcional en desarrollo.
