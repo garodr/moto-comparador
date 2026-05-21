@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react"; // Importamos useMemo para optimizar
 import * as XLSX from "xlsx";
 
 // ==========================================
@@ -107,7 +107,6 @@ const agruparPorProducto = (itemsFiltrados) => {
   });
 
   return Object.values(grupos).map((grupo) => {
-    // Usamos la función con su nuevo nombre en español y corregido
     const opcionesConPrecio = obtenerOpcionesValidas(grupo.opciones);
 
     let precioMinimo = Infinity;
@@ -127,7 +126,8 @@ const agruparPorProducto = (itemsFiltrados) => {
         opc.precioNum === precioMinimo && opc.proveedor === mejorProveedor;
       let diferenciaTexto = "";
 
-      if (opc.precioNum && precioMinimo !== Infinity && !esMejor) {
+      // CORRECCIÓN CRÍTICA: Cambiado a !== null para soportar precios en 0 de forma segura
+      if (opc.precioNum !== null && precioMinimo !== Infinity && !esMejor) {
         const difPorcentaje = Math.round(
           ((opc.precioNum - precioMinimo) / precioMinimo) * 100,
         );
@@ -264,13 +264,23 @@ export default function App() {
     setBusqueda("");
   };
 
-  const terminosBusqueda = normalizarTexto(busqueda)
-    .split(" ")
-    .filter((t) => t.length > 0);
-  const rawFiltrados = productos.filter((item) =>
-    cumpleBusquedaSegura(item, terminosBusqueda),
-  );
-  const productosAgrupados = agruparPorProducto(rawFiltrados);
+  // 1. Filtramos los productos según las palabras clave de la búsqueda
+  const terminosBusqueda = useMemo(() => {
+    return normalizarTexto(busqueda)
+      .split(" ")
+      .filter((t) => t.length > 0);
+  }, [busqueda]);
+
+  const rawFiltrados = useMemo(() => {
+    return productos.filter((item) =>
+      cumpleBusquedaSegura(item, terminosBusqueda),
+    );
+  }, [productos, terminosBusqueda]);
+
+  // 2. MEJORA TÉCNICA APLICADA: Memorizamos la agrupación para evitar re-renderizados pesados innecesarios
+  const productosAgrupados = useMemo(() => {
+    return agruparPorProducto(rawFiltrados);
+  }, [rawFiltrados]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 md:p-6 text-gray-800 font-sans antialiased">
