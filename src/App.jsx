@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"; // Importamos useMemo para optimizar
+import { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 
 // ==========================================
@@ -27,21 +27,17 @@ const obtenerValorFlexible = (item, textoBuscar) => {
     : "No disponible";
 };
 
+// MEJORA TÉCNICA: Búsqueda ultra veloz apuntando al índice pre-calculado
 const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   if (terminosBusqueda.length === 0) return true;
-  const stringItem = normalizarTexto(
-    JSON.stringify(item) + (item.proveedorOrigen || ""),
-  );
+  const stringItem = item._textoBusqueda || "";
   return terminosBusqueda.every((termino) => stringItem.includes(termino));
 };
 
 // Formateador exclusivo para Pesos Argentinos (Formato: $150.300 - Sin centavos)
 const formatearMonedaArgentina = (numero) => {
   if (numero === null || isNaN(numero)) return "S/D";
-
-  // Redondeamos al entero más cercano para eliminar los centavos del Excel
   const numeroRedondeado = Math.round(numero);
-
   return (
     "$" +
     numeroRedondeado.toLocaleString("es-AR", {
@@ -49,6 +45,25 @@ const formatearMonedaArgentina = (numero) => {
       maximumFractionDigits: 0,
     })
   );
+};
+
+// MEJORA TÉCNICA: Parser de precios desacoplado y reutilizable
+const parsearPrecio = (precioRaw) => {
+  if (!precioRaw || precioRaw === "No disponible") return null;
+
+  let limpio = String(precioRaw).trim();
+
+  // Control de formato tradicional argentino (punto para miles, coma para decimales)
+  if (limpio.includes(",") && limpio.includes(".")) {
+    limpio = limpio.replace(/\./g, "").replace(/,/g, ".");
+  } else if (limpio.includes(",")) {
+    limpio = limpio.replace(/,/g, ".");
+  }
+
+  limpio = limpio.replace(/[^0-9.-]+/g, "");
+  const numero = parseFloat(limpio);
+
+  return isNaN(numero) ? null : numero;
 };
 
 // Auxiliar para limpiar opciones rotas antes de calcular mínimos
@@ -69,27 +84,13 @@ const agruparPorProducto = (itemsFiltrados) => {
         ? `COD-${normalizarTexto(codigo)}`
         : `DET-${normalizarTexto(detalle)}`;
 
-    // Extraemos el precio final limando cualquier formato rebelde
+    // Usamos el nuevo parser de precios desacoplado
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
-    let precioFinalNum = null;
-
-    if (precioRaw !== "No disponible") {
-      let limpio = String(precioRaw).trim();
-
-      // Control de formato tradicional argentino (punto para miles, coma para decimales)
-      if (limpio.includes(",") && limpio.includes(".")) {
-        limpio = limpio.replace(/\./g, "").replace(/,/g, ".");
-      } else if (limpio.includes(",")) {
-        limpio = limpio.replace(/,/g, ".");
-      }
-
-      limpio = limpio.replace(/[^0-9.-]+/g, "");
-      precioFinalNum = parseFloat(limpio);
-    }
+    const precioFinalNum = parsearPrecio(precioRaw);
 
     const ofertaProveedor = {
       proveedor: item.proveedorOrigen || "Desconocido",
-      codigo: codigo,
+      codigo: codigo !== "No disponible" ? codigo : "SIN-CODIGO",
       precioNum: precioFinalNum,
       precioLista: obtenerValorFlexible(item, "PRECIO LISTA"),
       contado: obtenerValorFlexible(item, "CONTADO"),
@@ -97,6 +98,7 @@ const agruparPorProducto = (itemsFiltrados) => {
 
     if (!grupos[claveGrupo]) {
       grupos[claveGrupo] = {
+        idUnico: claveGrupo, // Guardamos la clave para usar como KEY estable en React
         detalle:
           detalle !== "No disponible" ? detalle : "Repuesto sin descripción",
         codigoPrincipal: codigo !== "No disponible" ? codigo : null,
@@ -126,7 +128,7 @@ const agruparPorProducto = (itemsFiltrados) => {
         opc.precioNum === precioMinimo && opc.proveedor === mejorProveedor;
       let diferenciaTexto = "";
 
-      // CORRECCIÓN CRÍTICA: Cambiado a !== null para soportar precios en 0 de forma segura
+      // Aplicada tu corrección de seguridad para el número 0 (!== null)
       if (opc.precioNum !== null && precioMinimo !== Infinity && !esMejor) {
         const difPorcentaje = Math.round(
           ((opc.precioNum - precioMinimo) / precioMinimo) * 100,
@@ -141,7 +143,6 @@ const agruparPorProducto = (itemsFiltrados) => {
       };
     });
 
-    // Ordenamos para dejar el más barato al principio
     grupo.opciones.sort(
       (a, b) => (a.precioNum || Infinity) - (b.precioNum || Infinity),
     );
@@ -221,11 +222,22 @@ export default function App() {
         const nombreProveedor = archivo.name.replace(/\.[^/.]+$/, "");
         const idUnico = Date.now().toString();
 
-        const datosConProveedor = datos.map((item) => ({
-          ...item,
-          archivoId: idUnico,
-          proveedorOrigen: nombreProveedor,
-        }));
+        // MEJORA TÉCNICA PRO: Generamos el índice liviano de texto '_textoBusqueda' UNA SOLA VEZ en la carga
+        const datosConProveedor = datos.map((item) => {
+          const codigo = obtenerValorFlexible(item, "CODIGO");
+          const detalle = obtenerValorFlexible(item, "DETALLE");
+
+          const textoIndexado = normalizarTexto(
+            `${codigo} ${detalle} ${nombreProveedor}`,
+          );
+
+          return {
+            ...item,
+            archivoId: idUnico,
+            proveedorOrigen: nombreProveedor,
+            _textoBusqueda: textoIndexado, // El motor de búsqueda mirará solo acá
+          };
+        });
 
         setProductos((prevProductos) => [
           ...prevProductos,
@@ -264,7 +276,7 @@ export default function App() {
     setBusqueda("");
   };
 
-  // 1. Filtramos los productos según las palabras clave de la búsqueda
+  // Filtrado optimizado con memorización básica
   const terminosBusqueda = useMemo(() => {
     return normalizarTexto(busqueda)
       .split(" ")
@@ -277,7 +289,7 @@ export default function App() {
     );
   }, [productos, terminosBusqueda]);
 
-  // 2. MEJORA TÉCNICA APLICADA: Memorizamos la agrupación para evitar re-renderizados pesados innecesarios
+  // Memorización pesada de agrupación
   const productosAgrupados = useMemo(() => {
     return agruparPorProducto(rawFiltrados);
   }, [rawFiltrados]);
@@ -381,9 +393,9 @@ export default function App() {
 
         {/* Listado Comparativo Visual */}
         <div className="space-y-3">
-          {productosAgrupados.slice(0, 50).map((grupo, idx) => (
+          {productosAgrupados.slice(0, 50).map((grupo) => (
             <div
-              key={idx}
+              key={grupo.idUnico} // MEJORA TÉCNICA: Identidad real para el grupo (Código o Detalle)
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200"
             >
               {grupo.codigoPrincipal && (
@@ -396,9 +408,9 @@ export default function App() {
               </h2>
 
               <div className="bg-gray-50 rounded-xl border border-gray-100 divide-y divide-gray-100 overflow-hidden">
-                {grupo.opciones.map((opc, oIdx) => (
+                {grupo.opciones.map((opc) => (
                   <div
-                    key={oIdx}
+                    key={`${opc.proveedor}-${opc.codigo}`} // MEJORA TÉCNICA: Identidad única real para la sub-fila
                     className={`p-3 flex items-center justify-between transition-colors ${
                       opc.esElMasBarato ? "bg-green-50/70" : ""
                     }`}
