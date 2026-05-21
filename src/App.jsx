@@ -5,22 +5,19 @@ import * as XLSX from "xlsx";
 // FUNCIONES AUXILIARES (Heurísticas y Normalización)
 // ==========================================
 
-// Limpia el texto eliminando acentos, mayúsculas y espacios innecesarios
 const normalizarTexto = (texto) => {
   if (!texto) return "";
   return String(texto)
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remueve diacríticos (acentos)
+    .replace(/[\u0300-\u036f]/g, "") // Remueve acentos
     .trim();
 };
 
-// Tu función original mejorada con normalización para encontrar columnas sin importar mayúsculas/acentos
 const obtenerValorFlexible = (item, textoBuscar) => {
   if (!item) return "No disponible";
   const terminoLimpio = normalizarTexto(textoBuscar);
 
-  // Busca una clave en el objeto que contenga el texto que queremos mapear
   const claveReales = Object.keys(item).find((key) =>
     normalizarTexto(key).includes(terminoLimpio),
   );
@@ -30,14 +27,14 @@ const obtenerValorFlexible = (item, textoBuscar) => {
     : "No disponible";
 };
 
-// Filtro inteligente: verifica que cada palabra que tipeó el usuario esté en la fila (en cualquier orden)
 const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   if (terminosBusqueda.length === 0) return true;
 
-  // Convertimos toda la fila a un string único normalizado para buscar de forma global
-  const stringItem = normalizarTexto(JSON.stringify(item));
+  // Incluimos el nombre del proveedor en el string global de búsqueda para poder filtrar por proveedor también
+  const stringItem = normalizarTexto(
+    JSON.stringify(item) + (item.proveedorOrigen || ""),
+  );
 
-  // Heurística: cada pedazo de texto buscado debe existir dentro del objeto
   return terminosBusqueda.every((termino) => stringItem.includes(termino));
 };
 
@@ -47,78 +44,130 @@ const cumpleBusquedaSegura = (item, terminosBusqueda) => {
 export default function App() {
   const [productos, setProductos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
-  const [error, setError] = useState("");
-  const [nombreArchivo, setNombreArchivo] = useState("");
+  const [errores, setErrores] = useState([]);
+  const [archivosCargados, setArchivosCargados] = useState([]);
 
-  const leerExcel = (e) => {
-    const archivo = e.target.files[0];
-    if (!archivo) return;
+  // Procesar un archivo individual (Retorna una Promesa para poder usarse en lote)
+  const procesarArchivoIndividual = (archivo) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
 
-    setNombreArchivo(archivo.name);
-    const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const data = evt.target.result;
+          const workbook = XLSX.read(data, { type: "binary" });
+          const nombreHoja = workbook.SheetNames[0];
+          const hoja = workbook.Sheets[nombreHoja];
 
-    reader.onload = (evt) => {
-      try {
-        const data = evt.target.result;
-        const workbook = XLSX.read(data, { type: "binary" });
-        const nombreHoja = workbook.SheetNames[0];
-        const hoja = workbook.Sheets[nombreHoja];
+          const filas = XLSX.utils.sheet_to_json(hoja, { header: 1 });
 
-        // Convertimos a matriz para validar el contenido e identificar encabezados
-        const filas = XLSX.utils.sheet_to_json(hoja, { header: 1 });
+          if (filas.length === 0) {
+            reject(`El archivo "${archivo.name}" está vacío.`);
+            return;
+          }
 
-        // Validación 1: Archivo vacío
-        if (filas.length === 0) {
-          setError("El archivo Excel seleccionado está vacío.");
-          return;
-        }
-
-        // Heurística para detectar la fila de encabezados (reutiliza tu lógica original pero con más flexibilidad)
-        const indexEncabezados = filas.findIndex((fila) =>
-          fila.some((celda) => {
-            const textoCelda = normalizarTexto(celda);
-            return (
-              textoCelda.includes("codigo de articulo") ||
-              textoCelda.includes("codigo") ||
-              textoCelda.includes("detalle") ||
-              textoCelda.includes("descripcion")
-            );
-          }),
-        );
-
-        // Si la heurística no encuentra palabras clave, por defecto asume la primera fila (0)
-        const filaInicioDatos = indexEncabezados !== -1 ? indexEncabezados : 0;
-
-        // Parseo final usando el rango correcto detectado
-        const datos = XLSX.utils.sheet_to_json(hoja, {
-          range: filaInicioDatos,
-        });
-
-        // Validación 2: ¿Pudo procesar filas de datos?
-        if (datos.length === 0) {
-          setError(
-            "No se encontraron filas de repuestos válidas por debajo del encabezado.",
+          const indexEncabezados = filas.findIndex((fila) =>
+            fila.some((celda) => {
+              const textoCelda = normalizarTexto(celda);
+              return (
+                textoCelda.includes("codigo de articulo") ||
+                textoCelda.includes("codigo") ||
+                textoCelda.includes("detalle") ||
+                textoCelda.includes("descripcion")
+              );
+            }),
           );
-          return;
+
+          const filaInicioDatos =
+            indexEncabezados !== -1 ? indexEncabezados : 0;
+          const datos = XLSX.utils.sheet_to_json(hoja, {
+            range: filaInicioDatos,
+          });
+
+          if (datos.length === 0) {
+            reject(`"${archivo.name}" no tiene filas válidas de repuestos.`);
+            return;
+          }
+
+          // Formateamos el nombre del archivo para usarlo como nombre de Proveedor
+          const nombreProveedor = archivo.name.replace(/\.[^/.]+$/, "");
+
+          // Inyectamos el nombre del proveedor a cada fila de este Excel
+          const datosConProveedor = datos.map((item) => ({
+            ...item,
+            proveedorOrigen: nombreProveedor,
+          }));
+
+          resolve({ datos: datosConProveedor, nombre: archivo.name });
+        } catch (err) {
+          console.error(err); // Usado para que ESLint no proteste
+          reject(`Error de formato en el archivo "${archivo.name}".`);
         }
+      };
 
-        setProductos(datos);
-        setError(""); // Limpiamos errores previos si todo salió bien
-      } catch (err) {
-        setError("Ocurrió un error al procesar el Excel. Verifica el formato.");
-        console.error(err);
-      }
-    };
-
-    reader.readAsBinaryString(archivo);
+      reader.onerror = () =>
+        reject(`No se pudo leer el archivo "${archivo.name}".`);
+      reader.readAsBinaryString(archivo);
+    });
   };
 
-  // Procesamos la barra de búsqueda una sola vez antes de mapear (Mejora el rendimiento en celular)
+  // Manejador de la carga múltiple
+  const leerMultiplesExcel = async (e) => {
+    const archivos = Array.from(e.target.files);
+    if (archivos.length === 0) return;
+
+    // Validación: limitar a 5 listas para cuidar la memoria del celular
+    if (archivos.length > 5) {
+      setErrores(["Puedes cargar un máximo de 5 listas en simultáneo."]);
+      return;
+    }
+
+    setErrores([]);
+
+    // Procesamos todos los archivos en paralelo usando Promesas
+    const promesas = archivos.map((archivo) =>
+      procesarArchivoIndividual(archivo),
+    );
+
+    try {
+      const resultados = await Promise.allSettled(promesas);
+
+      let productosAcumulados = [];
+      let nombresExitosos = [];
+      let mensajesError = [];
+
+      resultados.forEach((res) => {
+        if (res.status === "fulfilled") {
+          productosAcumulados = [...productosAcumulados, ...res.value.datos];
+          nombresExitosos.push(res.value.nombre);
+        } else {
+          mensajesError.push(res.reason);
+        }
+      });
+
+      // Guardamos todo el lote unificado en el estado
+      setProductos(productosAcumulados);
+      setArchivosCargados(nombresExitosos);
+      if (mensajesError.length > 0) setErrores(mensajesError);
+    } catch (err) {
+      console.error(err); // Usado para que ESLint no proteste
+      setErrores([
+        "Ocurrió un error inesperado al procesar el lote de archivos.",
+      ]);
+    }
+  };
+
+  // Limpiar el comparador para volver a empezar
+  const limpiarListas = () => {
+    setProductos([]);
+    setArchivosCargados([]);
+    setErrores([]);
+    setBusqueda("");
+  };
+
   const terminosBusqueda = normalizarTexto(busqueda)
     .split(" ")
     .filter((t) => t.length > 0);
-
-  // Filtrado flexible
   const filtrados = productos.filter((item) =>
     cumpleBusquedaSegura(item, terminosBusqueda),
   );
@@ -129,46 +178,67 @@ export default function App() {
         {/* Cabecera */}
         <header className="mb-6">
           <h1 className="text-3xl font-black tracking-tight flex items-center gap-2">
-            🏍️ Buscador de Repuestos
+            📊 Comparador de Listas Multi-Proveedor
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Cargá el Excel del proveedor y buscá al instante desde el taller.
+            Seleccioná hasta 5 archivos Excel juntos para cotejar precios al
+            toque.
           </p>
         </header>
 
-        {/* Zona de Carga de Archivo */}
+        {/* Zona de Carga Múltiple */}
         <div className="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-gray-200">
           <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">
-            Seleccionar Lista de Precios
+            Seleccionar de 1 a 5 Archivos Excel:
           </label>
           <input
             type="file"
             accept=".xlsx, .xls"
-            onChange={leerExcel}
+            multiple
+            onChange={leerMultiplesExcel}
             className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
           />
-          {nombreArchivo && !error && (
-            <p className="text-xs text-green-600 font-medium mt-2 flex items-center gap-1">
-              ✓ Archivo cargado:{" "}
-              <span className="font-semibold">{nombreArchivo}</span> (
-              {productos.length} ítems)
-            </p>
+
+          {archivosCargados.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-end">
+              <div>
+                <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">
+                  Listas activas:
+                </p>
+                <ul className="text-xs text-green-700 font-medium list-disc pl-4 mt-1 space-y-0.5">
+                  {archivosCargados.map((n, i) => (
+                    <li key={i}>{n}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-gray-400 mt-1 font-semibold">
+                  Total unificado: {productos.length} ítems
+                </p>
+              </div>
+              <button
+                onClick={limpiarListas}
+                className="text-xs font-bold text-red-600 bg-red-50 px-3 py-1.5 rounded-xl hover:bg-red-100"
+              >
+                Borrar todo
+              </button>
+            </div>
           )}
         </div>
 
-        {/* Mensajes de Validación */}
-        {error && (
-          <div className="bg-red-50 text-red-700 p-4 rounded-2xl mb-4 border border-red-200 text-sm font-medium">
-            ⚠️ {error}
+        {/* Mensajes de Validación/Errores */}
+        {errores.length > 0 && (
+          <div className="bg-red-50 text-red-700 p-4 rounded-2xl mb-4 border border-red-200 text-sm space-y-1">
+            {errores.map((err, i) => (
+              <p key={i}>⚠️ {err}</p>
+            ))}
           </div>
         )}
 
-        {/* Input de Búsqueda Inteligente */}
+        {/* Buscador Inteligente */}
         {productos.length > 0 && (
           <div className="sticky top-3 z-10 my-4 shadow-md rounded-2xl">
             <input
               type="text"
-              placeholder="Ej: 'bujia ngk titan' o 'pastilla freno cg'..."
+              placeholder="Ej: 'bujia' (coteja precios de todas las listas)..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="w-full p-4 rounded-2xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg shadow-inner"
@@ -178,19 +248,24 @@ export default function App() {
 
         {/* Listado de Tarjetas de Repuestos */}
         <div className="space-y-3">
-          {/* El .slice(0, 75) limita las tarjetas renderizadas simultáneamente para evitar tildar el navegador del celular */}
-          {filtrados.slice(0, 75).map((item, index) => {
+          {filtrados.slice(0, 100).map((item, index) => {
             const detalle = obtenerValorFlexible(item, "DETALLE");
             const codigo = obtenerValorFlexible(item, "CODIGO");
             const precioLista = obtenerValorFlexible(item, "PRECIO LISTA");
             const precioFinal = obtenerValorFlexible(item, "PRECIO FINAL");
             const contado = obtenerValorFlexible(item, "CONTADO");
+            const proveedor = item.proveedorOrigen || "Desconocido";
 
             return (
               <div
                 key={index}
-                className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 active:scale-[0.99] transition-transform"
+                className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 active:scale-[0.99] transition-transform relative overflow-hidden"
               >
+                {/* Etiqueta flotante del Proveedor */}
+                <span className="absolute top-3 right-3 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md max-w-[150px] truncate">
+                  📋 {proveedor}
+                </span>
+
                 {/* Código de Artículo */}
                 {codigo !== "No disponible" && (
                   <span className="inline-block text-xs font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 mb-1">
@@ -198,14 +273,14 @@ export default function App() {
                   </span>
                 )}
 
-                {/* Detalle o Descripción */}
-                <h2 className="text-lg font-bold text-gray-950 leading-tight">
+                {/* Detalle */}
+                <h2 className="text-lg font-bold text-gray-950 leading-tight pr-24">
                   {detalle !== "No disponible"
                     ? detalle
                     : "Repuesto sin descripción"}
                 </h2>
 
-                {/* Precios secundarios (Lista y Contado) */}
+                {/* Precios secundarios */}
                 <div className="grid grid-cols-2 gap-2 text-sm mt-3 pt-2 border-t border-gray-100">
                   {precioLista !== "No disponible" && (
                     <div>
@@ -229,7 +304,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Precio Principal Destacado (Precio Final) */}
+                {/* Precio Final Principal */}
                 {precioFinal !== "No disponible" && (
                   <div className="mt-3 bg-green-50 p-3 rounded-xl flex justify-between items-center border border-green-100">
                     <span className="text-green-800 text-xs font-bold uppercase tracking-wider">
@@ -248,10 +323,10 @@ export default function App() {
           {productos.length > 0 && filtrados.length === 0 && (
             <div className="text-center text-gray-500 py-12 bg-white rounded-2xl border p-4">
               <p className="text-lg font-medium">
-                No encontramos ese repuesto.
+                No se encontraron coincidencias.
               </p>
               <p className="text-sm text-gray-400 mt-1">
-                Probá escribiendo menos palabras o revisando la ortografía.
+                Intentá con un término más genérico.
               </p>
             </div>
           )}
