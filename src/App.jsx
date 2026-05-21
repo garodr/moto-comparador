@@ -35,6 +35,22 @@ const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   return terminosBusqueda.every((termino) => stringItem.includes(termino));
 };
 
+// Formateador exclusivo para Pesos Argentinos (Formato: $ 150.300 - Sin centavos)
+const formatearMonedaArgentina = (numero) => {
+  if (numero === null || isNaN(numero)) return "S/D";
+
+  // Redondeamos al entero más cercano para eliminar los centavos molestos del Excel
+  const numeroRedondeado = Math.round(numero);
+
+  return (
+    "$" +
+    numeroRedondeado.toLocaleString("es-AR", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    })
+  );
+};
+
 // HEURÍSTICA DE AGRUPACIÓN: Junta los repuestos repetidos entre proveedores
 const agruparPorProducto = (itemsFiltrados) => {
   const grupos = {};
@@ -43,23 +59,36 @@ const agruparPorProducto = (itemsFiltrados) => {
     const detalle = obtenerValorFlexible(item, "DETALLE");
     const codigo = obtenerValorFlexible(item, "CODIGO");
 
-    // Creamos una clave única para agrupar. Priorizamos código, si no tiene, usamos el detalle normalizado.
     const claveGrupo =
       codigo !== "No disponible"
         ? `COD-${normalizarTexto(codigo)}`
         : `DET-${normalizarTexto(detalle)}`;
 
-    // Extraemos el precio final de forma numérica para poder comparar matemáticamente
+    // Extraemos el precio final limando cualquier formato rebelde
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
-    const precioFinalNum =
-      precioRaw !== "No disponible"
-        ? parseFloat(String(precioRaw).replace(/[^0-9.-]+/g, ""))
-        : null;
+    let precioFinalNum = null;
+
+    if (precioRaw !== "No disponible") {
+      // Si el Excel viene con formato de miles con puntos y centavos con coma (ej: 1.250,45),
+      // limpiamos los puntos, cambiamos la coma por un punto decimal y removemos signos extra.
+      let limpio = String(precioRaw).trim();
+
+      // Si detectamos formato tradicional argentino (punto para miles, coma para decimales)
+      if (limpio.includes(",") && limpio.includes(".")) {
+        limpio = limpio.replace(/\./g, "").replace(/,/g, ".");
+      } else if (limpio.includes(",")) {
+        // Si solo tiene coma, asumimos que es el separador decimal
+        limpio = limpio.replace(/,/g, ".");
+      }
+
+      // Filtramos para dejar solo números, signo menos o el punto decimal
+      limpio = limpio.replace(/[^0-9.-]+/g, "");
+      precioFinalNum = parseFloat(limpio);
+    }
 
     const ofertaProveedor = {
       proveedor: item.proveedorOrigen || "Desconocido",
       codigo: codigo,
-      precioOriginal: precioRaw,
       precioNum: precioFinalNum,
       precioLista: obtenerValorFlexible(item, "PRECIO LISTA"),
       contado: obtenerValorFlexible(item, "CONTADO"),
@@ -76,18 +105,13 @@ const agruparPorProducto = (itemsFiltrados) => {
     grupos[claveGrupo].opciones.push(ofertaProveedor);
   });
 
-  // Procesamos cada grupo para marcar el mejor precio y calcular diferencias
   return Object.values(grupos).map((grupo) => {
-    // Filtramos solo las opciones que tengan un precio numérico válido
-    const opcionesConPrecio = grupo.opciones.filter(
-      (o) => o.precioNum !== null && !isNaN(o.precioNum),
-    );
+    const opcionesConPrecio = groupOpcionesValidas(grupo.opciones);
 
     let precioMinimo = Infinity;
     let mejorProveedor = null;
 
     if (opcionesConPrecio.length > 0) {
-      // Encontramos el precio más bajo
       opcionesConPrecio.forEach((opc) => {
         if (opc.precioNum < precioMinimo) {
           precioMinimo = opc.precioNum;
@@ -96,14 +120,12 @@ const agruparPorProducto = (itemsFiltrados) => {
       });
     }
 
-    // Le inyectamos a cada opción si es la ganadora y su diferencia porcentual
     grupo.opciones = grupo.opciones.map((opc) => {
       const esMejor =
         opc.precioNum === precioMinimo && opc.proveedor === mejorProveedor;
       let diferenciaTexto = "";
 
       if (opc.precioNum && precioMinimo !== Infinity && !esMejor) {
-        // Cálculo matemático de la diferencia: ((PrecioActual - PrecioMinimo) / PrecioMinimo) * 100
         const difPorcentaje = Math.round(
           ((opc.precioNum - precioMinimo) / precioMinimo) * 100,
         );
@@ -117,13 +139,18 @@ const agruparPorProducto = (itemsFiltrados) => {
       };
     });
 
-    // Ordenamos las opciones de la tarjeta para que el más barato aparezca siempre arriba de todo
+    // Ordenamos para dejar el más barato al principio
     grupo.opciones.sort(
       (a, b) => (a.precioNum || Infinity) - (b.precioNum || Infinity),
     );
 
     return grupo;
   });
+};
+
+// Auxiliar para limpiar opciones rotas antes de calcular mínimos
+const groupOpcionesValidas = (opciones) => {
+  return opciones.filter((o) => o.precioNum !== null && !isNaN(o.precioNum));
 };
 
 // ==========================================
@@ -240,15 +267,12 @@ export default function App() {
     setBusqueda("");
   };
 
-  // 1. Filtramos los productos según la barra de búsqueda básica
   const terminosBusqueda = normalizarTexto(busqueda)
     .split(" ")
     .filter((t) => t.length > 0);
   const rawFiltrados = productos.filter((item) =>
     cumpleBusquedaSegura(item, terminosBusqueda),
   );
-
-  // 2. Aplicamos la heurística visual para agrupar repetidos y encontrar el recomendado
   const productosAgrupados = agruparPorProducto(rawFiltrados);
 
   return (
@@ -348,14 +372,13 @@ export default function App() {
           </div>
         )}
 
-        {/* Listado Comparativo Visual (Optimizado para Celular) */}
+        {/* Listado Comparativo Visual */}
         <div className="space-y-3">
           {productosAgrupados.slice(0, 50).map((grupo, idx) => (
             <div
               key={idx}
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200"
             >
-              {/* Cabecera del Repuesto Único */}
               {grupo.codigoPrincipal && (
                 <span className="inline-block text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 mb-1">
                   Cód: {grupo.codigoPrincipal}
@@ -365,7 +388,6 @@ export default function App() {
                 {grupo.detalle}
               </h2>
 
-              {/* Contenedor de la Comparativa de Precios */}
               <div className="bg-gray-50 rounded-xl border border-gray-100 divide-y divide-gray-100 overflow-hidden">
                 {grupo.opciones.map((opc, oIdx) => (
                   <div
@@ -374,7 +396,6 @@ export default function App() {
                       opc.esElMasBarato ? "bg-green-50/70" : ""
                     }`}
                   >
-                    {/* Info del Proveedor */}
                     <div className="flex items-center gap-2 truncate pr-2">
                       <span className="text-sm font-bold text-gray-700 truncate">
                         {opc.proveedor}
@@ -386,20 +407,16 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Precios y Diferenciales */}
                     <div className="text-right flex-shrink-0">
+                      {/* Formato de ARS aplicado acá */}
                       <span
                         className={`text-base font-black ${
                           opc.esElMasBarato ? "text-green-700" : "text-gray-900"
                         }`}
                       >
-                        $
-                        {opc.precioOriginal !== "No disponible"
-                          ? opc.precioOriginal
-                          : "S/D"}
+                        {formatearMonedaArgentina(opc.precioNum)}
                       </span>
 
-                      {/* Porcentaje de recargo con respecto al más barato */}
                       {opc.diferencia && (
                         <span className="block text-[10px] font-bold text-amber-600">
                           {opc.diferencia} más caro
@@ -414,7 +431,7 @@ export default function App() {
 
           {productos.length > 0 && productosAgrupados.length === 0 && (
             <div className="text-center text-gray-400 py-10 bg-white rounded-xl border p-4 text-xs font-medium">
-              No hay coincidencias para tu búsqueda comparativa.
+              No hay開coincidencias para tu búsqueda comparativa.
             </div>
           )}
         </div>
