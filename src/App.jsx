@@ -29,13 +29,101 @@ const obtenerValorFlexible = (item, textoBuscar) => {
 
 const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   if (terminosBusqueda.length === 0) return true;
-
-  // Incluimos el nombre del proveedor en el string global de búsqueda
   const stringItem = normalizarTexto(
     JSON.stringify(item) + (item.proveedorOrigen || ""),
   );
-
   return terminosBusqueda.every((termino) => stringItem.includes(termino));
+};
+
+// HEURÍSTICA DE AGRUPACIÓN: Junta los repuestos repetidos entre proveedores
+const agruparPorProducto = (itemsFiltrados) => {
+  const grupos = {};
+
+  itemsFiltrados.forEach((item) => {
+    const detalle = obtenerValorFlexible(item, "DETALLE");
+    const codigo = obtenerValorFlexible(item, "CODIGO");
+
+    // Creamos una clave única para agrupar. Priorizamos código, si no tiene, usamos el detalle normalizado.
+    const claveGrupo =
+      codigo !== "No disponible"
+        ? `COD-${normalizarTexto(codigo)}`
+        : `DET-${normalizarTexto(detalle)}`;
+
+    // Extraemos el precio final de forma numérica para poder comparar matemáticamente
+    const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
+    const precioFinalNum =
+      precioRaw !== "No disponible"
+        ? parseFloat(String(precioRaw).replace(/[^0-9.-]+/g, ""))
+        : null;
+
+    const ofertaProveedor = {
+      proveedor: item.proveedorOrigen || "Desconocido",
+      codigo: codigo,
+      precioOriginal: precioRaw,
+      precioNum: precioFinalNum,
+      precioLista: obtenerValorFlexible(item, "PRECIO LISTA"),
+      contado: obtenerValorFlexible(item, "CONTADO"),
+    };
+
+    if (!grupos[claveGrupo]) {
+      grupos[claveGrupo] = {
+        detalle:
+          detalle !== "No disponible" ? detalle : "Repuesto sin descripción",
+        codigoPrincipal: codigo !== "No disponible" ? codigo : null,
+        opciones: [],
+      };
+    }
+    grupos[claveGrupo].opciones.push(ofertaProveedor);
+  });
+
+  // Procesamos cada grupo para marcar el mejor precio y calcular diferencias
+  return Object.values(grupos).map((grupo) => {
+    // Filtramos solo las opciones que tengan un precio numérico válido
+    const opcionesConPrecio = grupo.opciones.filter(
+      (o) => o.precioNum !== null && !isNaN(o.precioNum),
+    );
+
+    let precioMinimo = Infinity;
+    let mejorProveedor = null;
+
+    if (opcionesConPrecio.length > 0) {
+      // Encontramos el precio más bajo
+      opcionesConPrecio.forEach((opc) => {
+        if (opc.precioNum < precioMinimo) {
+          precioMinimo = opc.precioNum;
+          mejorProveedor = opc.proveedor;
+        }
+      });
+    }
+
+    // Le inyectamos a cada opción si es la ganadora y su diferencia porcentual
+    grupo.opciones = grupo.opciones.map((opc) => {
+      const esMejor =
+        opc.precioNum === precioMinimo && opc.proveedor === mejorProveedor;
+      let diferenciaTexto = "";
+
+      if (opc.precioNum && precioMinimo !== Infinity && !esMejor) {
+        // Cálculo matemático de la diferencia: ((PrecioActual - PrecioMinimo) / PrecioMinimo) * 100
+        const difPorcentaje = Math.round(
+          ((opc.precioNum - precioMinimo) / precioMinimo) * 100,
+        );
+        diferenciaTexto = `(+${difPorcentaje}%)`;
+      }
+
+      return {
+        ...opc,
+        esElMasBarato: esMejor,
+        diferencia: diferenciaTexto,
+      };
+    });
+
+    // Ordenamos las opciones de la tarjeta para que el más barato aparezca siempre arriba de todo
+    grupo.opciones.sort(
+      (a, b) => (a.precioNum || Infinity) - (b.precioNum || Infinity),
+    );
+
+    return grupo;
+  });
 };
 
 // ==========================================
@@ -45,14 +133,12 @@ export default function App() {
   const [productos, setProductos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [errores, setErrores] = useState([]);
-  const [archivosCargados, setArchivosCargados] = useState([]); // Guardará objetos: { id, nombre, proveedor }
+  const [archivosCargados, setArchivosCargados] = useState([]);
 
-  // Manejador para cargar los Excel de a uno y acumularlos
   const leerUnExcel = (e) => {
     const archivo = e.target.files[0];
     if (!archivo) return;
 
-    // Validación: Máximo de 5 listas acumuladas
     if (archivosCargados.length >= 5) {
       setErrores([
         "Ya cargaste el máximo de 5 listas. Borrá alguna para sumar otra.",
@@ -61,7 +147,6 @@ export default function App() {
       return;
     }
 
-    // Validación: Evitar duplicados por nombre
     if (archivosCargados.some((a) => a.nombre === archivo.name)) {
       setErrores([`El archivo "${archivo.name}" ya está cargado.`]);
       e.target.value = "";
@@ -109,18 +194,15 @@ export default function App() {
           return;
         }
 
-        // Formateamos el nombre del proveedor sacando la extensión (.xlsx)
         const nombreProveedor = archivo.name.replace(/\.[^/.]+$/, "");
-        const idUnico = Date.now().toString(); // ID para poder borrarlo individualmente después
+        const idUnico = Date.now().toString();
 
-        // Inyectamos el ID y nombre del proveedor a cada fila de este Excel
         const datosConProveedor = datos.map((item) => ({
           ...item,
           archivoId: idUnico,
           proveedorOrigen: nombreProveedor,
         }));
 
-        // Acumulamos en los estados correspondientes
         setProductos((prevProductos) => [
           ...prevProductos,
           ...datosConProveedor,
@@ -130,7 +212,7 @@ export default function App() {
           { id: idUnico, nombre: archivo.name, proveedor: nombreProveedor },
         ]);
 
-        e.target.value = ""; // Limpiamos el input para el próximo toque
+        e.target.value = "";
       } catch (err) {
         console.error(err);
         setErrores([`Error de formato en "${archivo.name}".`]);
@@ -141,7 +223,6 @@ export default function App() {
     reader.readAsBinaryString(archivo);
   };
 
-  // FUNCIÓN CLAVE PARA CELULARES: Permite sacar una lista individual de la memoria sin resetear todo
   const eliminarListaIndividual = (idParaEliminar) => {
     setProductos((prevProductos) =>
       prevProductos.filter((p) => p.archivoId !== idParaEliminar),
@@ -159,12 +240,16 @@ export default function App() {
     setBusqueda("");
   };
 
+  // 1. Filtramos los productos según la barra de búsqueda básica
   const terminosBusqueda = normalizarTexto(busqueda)
     .split(" ")
     .filter((t) => t.length > 0);
-  const filtrados = productos.filter((item) =>
+  const rawFiltrados = productos.filter((item) =>
     cumpleBusquedaSegura(item, terminosBusqueda),
   );
+
+  // 2. Aplicamos la heurística visual para agrupar repetidos y encontrar el recomendado
+  const productosAgrupados = agruparPorProducto(rawFiltrados);
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 md:p-6 text-gray-800 font-sans antialiased">
@@ -172,14 +257,15 @@ export default function App() {
         {/* Cabecera */}
         <header className="mb-5 text-center sm:text-left">
           <h1 className="text-2xl font-black tracking-tight text-gray-900">
-            🏍️ Buscador Multi-Listas
+            📊 Comparador de Precios Inteligente
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Cargá los Excel de a uno. Buscá y compará precios al instante.
+            Buscá un repuesto y la app te dirá automáticamente cuál proveedor te
+            conviene.
           </p>
         </header>
 
-        {/* Contenedor de Carga (Diseño optimizado para dedos/pantallas táctiles) */}
+        {/* Zona de Carga */}
         <div className="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-gray-200">
           <div className="flex justify-between items-center mb-3">
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
@@ -195,17 +281,16 @@ export default function App() {
             )}
           </div>
 
-          {/* Botón de carga grande para el dedo */}
           {archivosCargados.length < 5 ? (
             <label className="flex flex-col items-center justify-center w-full h-14 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-xl cursor-pointer active:bg-blue-100 transition-colors">
               <div className="flex items-center gap-2 text-sm font-bold text-blue-700">
-                ➕ <span>Toca acá para sumar un Excel</span>
+                ➕ <span>Sumar lista de proveedor</span>
               </div>
               <input
                 type="file"
                 accept=".xlsx, .xls"
                 onChange={leerUnExcel}
-                className="hidden" // Escondemos el input feo nativo
+                className="hidden"
               />
             </label>
           ) : (
@@ -214,7 +299,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Panel de Gestión de Listas Activas (Tarjetitas individuales con botón de borrado) */}
           {archivosCargados.length > 0 && (
             <div className="mt-4 pt-3 border-t border-gray-100 space-y-2">
               {archivosCargados.map((archivo) => (
@@ -230,23 +314,14 @@ export default function App() {
                       {archivo.nombre}
                     </p>
                   </div>
-                  {/* Botón X bien grande y fácil de presionar con el pulgar */}
                   <button
                     onClick={() => eliminarListaIndividual(archivo.id)}
-                    className="p-1 px-2.5 text-xs font-black text-gray-400 hover:text-red-600 active:bg-red-50 rounded-lg transition-colors"
-                    title="Eliminar esta lista"
+                    className="p-1 px-2.5 text-xs font-black text-gray-400 active:text-red-600 rounded-lg"
                   >
                     ✕
                   </button>
                 </div>
               ))}
-              <p className="text-[11px] text-gray-400 text-right font-medium mt-1">
-                Total acumulado para buscar:{" "}
-                <span className="font-bold text-gray-700">
-                  {productos.length}
-                </span>{" "}
-                repuestos.
-              </p>
             </div>
           )}
         </div>
@@ -260,12 +335,12 @@ export default function App() {
           </div>
         )}
 
-        {/* Buscador Inteligente Pegajoso (Se queda fijo arriba al hacer scroll) */}
+        {/* Buscador Pegajoso */}
         {productos.length > 0 && (
           <div className="sticky top-2 z-20 my-3 shadow-md rounded-xl">
             <input
               type="text"
-              placeholder="Escribí marca, modelo o código..."
+              placeholder="Ej: 'bujia' o 'pastilla freno'..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="w-full p-3.5 rounded-xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base shadow-inner"
@@ -273,83 +348,73 @@ export default function App() {
           </div>
         )}
 
-        {/* Tarjetas de Repuestos */}
-        <div className="space-y-2.5">
-          {filtrados.slice(0, 100).map((item, index) => {
-            const detalle = obtenerValorFlexible(item, "DETALLE");
-            const codigo = obtenerValorFlexible(item, "CODIGO");
-            const precioLista = obtenerValorFlexible(item, "PRECIO LISTA");
-            const precioFinal = obtenerValorFlexible(item, "PRECIO FINAL");
-            const contado = obtenerValorFlexible(item, "CONTADO");
-            const proveedor = item.proveedorOrigen || "Desconocido";
-
-            return (
-              <div
-                key={index}
-                className="bg-white p-3.5 rounded-xl shadow-sm border border-gray-200 active:bg-gray-50 active:scale-[0.99] transition-all relative overflow-hidden"
-              >
-                {/* Nombre de la Lista / Proveedor */}
-                <span className="absolute top-3 right-3 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md max-w-[130px] truncate">
-                  📋 {proveedor}
+        {/* Listado Comparativo Visual (Optimizado para Celular) */}
+        <div className="space-y-3">
+          {productosAgrupados.slice(0, 50).map((grupo, idx) => (
+            <div
+              key={idx}
+              className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200"
+            >
+              {/* Cabecera del Repuesto Único */}
+              {grupo.codigoPrincipal && (
+                <span className="inline-block text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 mb-1">
+                  Cód: {grupo.codigoPrincipal}
                 </span>
+              )}
+              <h2 className="text-base font-black text-gray-950 leading-tight mb-3">
+                {grupo.detalle}
+              </h2>
 
-                {/* Código */}
-                {codigo !== "No disponible" && (
-                  <span className="inline-block text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 mb-1">
-                    Cód: {codigo}
-                  </span>
-                )}
-
-                {/* Detalle */}
-                <h2 className="text-base font-bold text-gray-900 leading-tight pr-24">
-                  {detalle !== "No disponible"
-                    ? detalle
-                    : "Repuesto sin descripción"}
-                </h2>
-
-                {/* Precios secundarios */}
-                <div className="grid grid-cols-2 gap-2 text-xs mt-2.5 pt-2 border-t border-gray-100">
-                  {precioLista !== "No disponible" && (
-                    <div>
-                      <span className="text-gray-400 block text-[10px]">
-                        Precio Lista
+              {/* Contenedor de la Comparativa de Precios */}
+              <div className="bg-gray-50 rounded-xl border border-gray-100 divide-y divide-gray-100 overflow-hidden">
+                {grupo.opciones.map((opc, oIdx) => (
+                  <div
+                    key={oIdx}
+                    className={`p-3 flex items-center justify-between transition-colors ${
+                      opc.esElMasBarato ? "bg-green-50/70" : ""
+                    }`}
+                  >
+                    {/* Info del Proveedor */}
+                    <div className="flex items-center gap-2 truncate pr-2">
+                      <span className="text-sm font-bold text-gray-700 truncate">
+                        {opc.proveedor}
                       </span>
-                      <span className="font-semibold text-gray-600">
-                        ${precioLista}
-                      </span>
+                      {opc.esElMasBarato && (
+                        <span className="text-xs bg-green-600 text-white font-extrabold px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider animate-pulse">
+                          Recomendado ✅
+                        </span>
+                      )}
                     </div>
-                  )}
-                  {contado !== "No disponible" && (
-                    <div>
-                      <span className="text-blue-600 block text-[10px] font-medium">
-                        Contado / Efvo
-                      </span>
-                      <span className="font-bold text-blue-700">
-                        ${contado}
-                      </span>
-                    </div>
-                  )}
-                </div>
 
-                {/* Precio Principal */}
-                {precioFinal !== "No disponible" && (
-                  <div className="mt-2.5 bg-green-50 p-2.5 rounded-xl flex justify-between items-center border border-green-100">
-                    <span className="text-green-800 text-[10px] font-bold uppercase tracking-wider">
-                      Precio Final:
-                    </span>
-                    <span className="text-xl font-black text-green-600">
-                      ${precioFinal}
-                    </span>
+                    {/* Precios y Diferenciales */}
+                    <div className="text-right flex-shrink-0">
+                      <span
+                        className={`text-base font-black ${
+                          opc.esElMasBarato ? "text-green-700" : "text-gray-900"
+                        }`}
+                      >
+                        $
+                        {opc.precioOriginal !== "No disponible"
+                          ? opc.precioOriginal
+                          : "S/D"}
+                      </span>
+
+                      {/* Porcentaje de recargo con respecto al más barato */}
+                      {opc.diferencia && (
+                        <span className="block text-[10px] font-bold text-amber-600">
+                          {opc.diferencia} más caro
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
-            );
-          })}
+            </div>
+          ))}
 
-          {/* Estado de lista vacía */}
-          {productos.length > 0 && filtrados.length === 0 && (
+          {productos.length > 0 && productosAgrupados.length === 0 && (
             <div className="text-center text-gray-400 py-10 bg-white rounded-xl border p-4 text-xs font-medium">
-              No hay coincidencias para tu búsqueda.
+              No hay coincidencias para tu búsqueda comparativa.
             </div>
           )}
         </div>
