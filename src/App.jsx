@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
-import logoApp from "./assets/icono.png";
+import logoApp from "./assets/logo.svg"; // IMPORTÁ ACÁ TU LOGO (Asegurate de que la ruta sea correcta)
 
 // ==========================================
 // FUNCIONES AUXILIARES (Heurísticas y Normalización)
@@ -28,7 +28,7 @@ const obtenerValorFlexible = (item, textoBuscar) => {
     : "No disponible";
 };
 
-// MEJORA TÉCNICA: Búsqueda ultra veloz apuntando al índice pre-calculado
+// Búsqueda veloz apuntando al índice pre-calculado
 const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   if (terminosBusqueda.length === 0) return true;
   const stringItem = item._textoBusqueda || "";
@@ -48,7 +48,7 @@ const formatearMonedaArgentina = (numero) => {
   );
 };
 
-// MEJORA TÉCNICA: Parser de precios desacoplado y reutilizable
+// Parser de precios desacoplado y reutilizable
 const parsearPrecio = (precioRaw) => {
   if (!precioRaw || precioRaw === "No disponible") return null;
 
@@ -85,7 +85,6 @@ const agruparPorProducto = (itemsFiltrados) => {
         ? `COD-${normalizarTexto(codigo)}`
         : `DET-${normalizarTexto(detalle)}`;
 
-    // Usamos el nuevo parser de precios desacoplado
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
     const precioFinalNum = parsearPrecio(precioRaw);
 
@@ -99,7 +98,7 @@ const agruparPorProducto = (itemsFiltrados) => {
 
     if (!grupos[claveGrupo]) {
       grupos[claveGrupo] = {
-        idUnico: claveGrupo, // Guardamos la clave para usar como KEY estable en React
+        idUnico: claveGrupo,
         detalle:
           detalle !== "No disponible" ? detalle : "Repuesto sin descripción",
         codigoPrincipal: codigo !== "No disponible" ? codigo : null,
@@ -129,7 +128,6 @@ const agruparPorProducto = (itemsFiltrados) => {
         opc.precioNum === precioMinimo && opc.proveedor === mejorProveedor;
       let diferenciaTexto = "";
 
-      // Aplicada tu corrección de seguridad para el número 0 (!== null)
       if (opc.precioNum !== null && precioMinimo !== Infinity && !esMejor) {
         const difPorcentaje = Math.round(
           ((opc.precioNum - precioMinimo) / precioMinimo) * 100,
@@ -165,6 +163,7 @@ export default function App() {
     const archivo = e.target.files[0];
     if (!archivo) return;
 
+    // ACTUALIZADO: Ahora el límite de validación es de 6 listas
     if (archivosCargados.length >= 6) {
       setErrores([
         "Ya cargaste el máximo de 6 listas. Borrá alguna para sumar otra.",
@@ -223,7 +222,6 @@ export default function App() {
         const nombreProveedor = archivo.name.replace(/\.[^/.]+$/, "");
         const idUnico = Date.now().toString();
 
-        // MEJORA TÉCNICA PRO: Generamos el índice liviano de texto '_textoBusqueda' UNA SOLA VEZ en la carga
         const datosConProveedor = datos.map((item) => {
           const codigo = obtenerValorFlexible(item, "CODIGO");
           const detalle = obtenerValorFlexible(item, "DETALLE");
@@ -236,7 +234,7 @@ export default function App() {
             ...item,
             archivoId: idUnico,
             proveedorOrigen: nombreProveedor,
-            _textoBusqueda: textoIndexado, // El motor de búsqueda mirará solo acá
+            _textoBusqueda: textoIndexado,
           };
         });
 
@@ -251,7 +249,7 @@ export default function App() {
 
         e.target.value = "";
       } catch (err) {
-        console.error(err);
+        console.error("Error procesando la planilla:", err);
         setErrores([`Error de formato en "${archivo.name}".`]);
         e.target.value = "";
       }
@@ -277,7 +275,6 @@ export default function App() {
     setBusqueda("");
   };
 
-  // Filtrado optimizado con memorización básica
   const terminosBusqueda = useMemo(() => {
     return normalizarTexto(busqueda)
       .split(" ")
@@ -290,7 +287,6 @@ export default function App() {
     );
   }, [productos, terminosBusqueda]);
 
-  // Memorización pesada de agrupación
   const productosAgrupados = useMemo(() => {
     return agruparPorProducto(rawFiltrados);
   }, [rawFiltrados]);
@@ -300,9 +296,13 @@ export default function App() {
       <div className="max-w-xl mx-auto">
         {/* Cabecera */}
         <header className="mb-5 text-center sm:text-left">
-          <h1 className="text-2xl font-black tracking-tight text-gray-900">
-            <img src={logoApp} alt="Logo" className="w-8 h-8 object-contain" />{" "}
-            MotoList
+          <h1 className="text-2xl font-black tracking-tight text-gray-900 flex items-center justify-center sm:justify-start gap-2.5">
+            <img
+              src={logoApp}
+              alt="Logo App"
+              className="w-8 h-8 object-contain"
+            />
+            <span>Comparador de Precios Inteligente</span>
           </h1>
           <p className="text-xs text-gray-500 mt-1">
             Buscá un repuesto y la app te dirá automáticamente cuál proveedor te
@@ -313,8 +313,9 @@ export default function App() {
         {/* Zona de Carga */}
         <div className="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-gray-200">
           <div className="flex justify-between items-center mb-3">
+            {/* ACTUALIZADO: Texto en el header indicando /6 */}
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
-              Listas en memoria ({archivosCargados.length}/5)
+              Listas en memoria ({archivosCargados.length}/6)
             </span>
             {archivosCargados.length > 0 && (
               <button
@@ -326,7 +327,8 @@ export default function App() {
             )}
           </div>
 
-          {archivosCargados.length < 5 ? (
+          {/* ACTUALIZADO: Condicional modificado para bloquear a partir de 6 */}
+          {archivosCargados.length < 6 ? (
             <label className="flex flex-col items-center justify-center w-full h-14 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-xl cursor-pointer active:bg-blue-100 transition-colors">
               <div className="flex items-center gap-2 text-sm font-bold text-blue-700">
                 ➕ <span>Sumar lista de proveedor</span>
@@ -340,7 +342,7 @@ export default function App() {
             </label>
           ) : (
             <div className="text-center p-3 bg-amber-50 border border-amber-200 text-amber-800 font-medium rounded-xl text-xs">
-              🔒 Límite de 5 listas alcanzado.
+              🔒 Límite de 6 listas alcanzado.
             </div>
           )}
 
@@ -397,7 +399,7 @@ export default function App() {
         <div className="space-y-3">
           {productosAgrupados.slice(0, 50).map((grupo) => (
             <div
-              key={grupo.idUnico} // MEJORA TÉCNICA: Identidad real para el grupo (Código o Detalle)
+              key={grupo.idUnico}
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200"
             >
               {grupo.codigoPrincipal && (
@@ -412,7 +414,7 @@ export default function App() {
               <div className="bg-gray-50 rounded-xl border border-gray-100 divide-y divide-gray-100 overflow-hidden">
                 {grupo.opciones.map((opc) => (
                   <div
-                    key={`${opc.proveedor}-${opc.codigo}`} // MEJORA TÉCNICA: Identidad única real para la sub-fila
+                    key={`${opc.proveedor}-${opc.codigo}`}
                     className={`p-3 flex items-center justify-between transition-colors ${
                       opc.esElMasBarato ? "bg-green-50/70" : ""
                     }`}
