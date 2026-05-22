@@ -17,29 +17,25 @@ const normalizarTexto = (texto) => {
     .trim();
 };
 
-// NUEVA FUNCIÓN: Extrae el nombre limpio del proveedor del archivo o del texto
+// Extrae el nombre limpio del proveedor basándose en el archivo
 const detectarNombreProveedor = (nombreArchivo) => {
   const textoLimpio = nombreArchivo.toUpperCase();
-
-  // Lista de tus proveedores conocidos
   const proveedores = [
     "ARAX",
     "HADA",
     "REPCOR",
     "ROHAN",
     "CATALANO",
-    "WStandard",
+    "WSTANDARD",
   ];
 
-  // Si encuentra la palabra clave en el nombre del archivo, usa esa
   const encontrado = proveedores.find((p) => textoLimpio.includes(p));
   if (encontrado) return encontrado;
 
-  // Si no es ninguno de los conocidos, limpia el ".xlsx" y saca "LISTA DE PRECIOS" si existe
   return nombreArchivo
-    .replace(/\.[^/.]+$/, "") // Quita extensión
+    .replace(/\.[^/.]+$/, "")
     .replace(/LISTA DE PRECIOS/i, "")
-    .replace(/MAYO|JUNIO|JULIO|AGOSTO|DE/i, "") // Quita meses comunes o conectores
+    .replace(/MAYO|JUNIO|JULIO|AGOSTO|DE/i, "")
     .trim()
     .toUpperCase();
 };
@@ -64,7 +60,7 @@ const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   return terminosBusqueda.every((termino) => stringItem.includes(termino));
 };
 
-// Formateador exclusivo para Pesos Argentinos (Formato: $150.300 - Sin centavos)
+// Formateador exclusivo para Pesos Argentinos (Formato: $150.300)
 const formatearMonedaArgentina = (numero) => {
   if (numero === null || isNaN(numero)) return "S/D";
   const numeroRedondeado = Math.round(numero);
@@ -77,13 +73,11 @@ const formatearMonedaArgentina = (numero) => {
   );
 };
 
-// Parser de precios desacoplado y reutilizable
+// Parser de precios
 const parsearPrecio = (precioRaw) => {
   if (!precioRaw || precioRaw === "No disponible") return null;
 
   let limpio = String(precioRaw).trim();
-
-  // Control de formato tradicional argentino (punto para miles, coma para decimales)
   if (limpio.includes(",") && limpio.includes(".")) {
     limpio = limpio.replace(/\./g, "").replace(/,/g, ".");
   } else if (limpio.includes(",")) {
@@ -92,16 +86,14 @@ const parsearPrecio = (precioRaw) => {
 
   limpio = limpio.replace(/[^0-9.-]+/g, "");
   const numero = parseFloat(limpio);
-
   return isNaN(numero) ? null : numero;
 };
 
-// Auxiliar para limpiar opciones rotas antes de calcular mínimos
 const obtenerOpcionesValidas = (opciones) => {
   return opciones.filter((o) => o.precioNum !== null && !isNaN(o.precioNum));
 };
 
-// HEURÍSTICA DE AGRUPACIÓN: Junta los repuestos repetidos entre proveedores
+// HEURÍSTICA DE AGRUPACIÓN CORREGIDA
 const agruparPorProducto = (itemsFiltrados) => {
   const grupos = {};
 
@@ -109,23 +101,22 @@ const agruparPorProducto = (itemsFiltrados) => {
     const detalle = obtenerValorFlexible(item, "DETALLE");
     const codigo = obtenerValorFlexible(item, "CODIGO");
 
-    // Limpia textos finales entre paréntesis (ej: "(ARAX)", "(HADA)")
+    // Limpieza de paréntesis finales (ej: "(ARAX)")
     const detalleLimpioBase =
       detalle !== "No disponible"
         ? detalle.replace(/\s*\([^)]*\)\s*$/, "").trim()
         : "Repuesto sin descripción";
 
-    const claveGrupo =
-      codigo !== "No disponible"
-        ? `COD-${normalizarTexto(codigo)}`
-        : `DET-${normalizarTexto(detalleLimpioBase)}`;
+    // SOLUCIÓN: Agrupamos estrictamente por el nombre del repuesto base
+    // para ignorar que tengan códigos de artículo diferentes entre proveedores.
+    const claveGrupo = `DET-${normalizarTexto(detalleLimpioBase)}`;
 
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
     const precioFinalNum = parsearPrecio(precioRaw);
 
     const ofertaProveedor = {
-      proveedor: item.proveedorOrigen || "Desconocido", // Acá ya viene el nombre limpio (Ej: ARAX)
-      codigo: codigo !== "No disponible" ? codigo : "SIN-CODIGO",
+      proveedor: item.proveedorOrigen || "Desconocido",
+      codigo: codigo !== "No disponible" ? codigo : null, // Guardamos el código para mostrarlo individualmente
       precioNum: precioFinalNum,
       precioLista: obtenerValorFlexible(item, "PRECIO LISTA"),
       contado: obtenerValorFlexible(item, "CONTADO"),
@@ -135,7 +126,6 @@ const agruparPorProducto = (itemsFiltrados) => {
       grupos[claveGrupo] = {
         idUnico: claveGrupo,
         detalle: detalleLimpioBase,
-        codigoPrincipal: codigo !== "No disponible" ? codigo : null,
         opciones: [],
       };
     }
@@ -147,19 +137,23 @@ const agruparPorProducto = (itemsFiltrados) => {
 
     let precioMinimo = Infinity;
     let mejorProveedor = null;
+    let mejorCodigo = null;
 
     if (opcionesConPrecio.length > 0) {
       opcionesConPrecio.forEach((opc) => {
         if (opc.precioNum !== null && opc.precioNum < precioMinimo) {
           precioMinimo = opc.precioNum;
           mejorProveedor = opc.proveedor;
+          mejorCodigo = opc.codigo;
         }
       });
     }
 
-    grupo.opciones = grupo.opciones.map((opc) => {
+    grupo.opciones = grupo.options = grupo.opciones.map((opc) => {
       const esMejor =
-        opc.precioNum === precioMinimo && opc.proveedor === mejorProveedor;
+        opc.precioNum === precioMinimo &&
+        opc.proveedor === mejorProveedor &&
+        opc.codigo === mejorCodigo;
       let diferenciaTexto = "";
 
       if (opc.precioNum !== null && precioMinimo !== Infinity && !esMejor) {
@@ -176,6 +170,7 @@ const agruparPorProducto = (itemsFiltrados) => {
       };
     });
 
+    // Ordenamos las opciones internas del grupo de menor a mayor precio
     grupo.opciones.sort(
       (a, b) => (a.precioNum || Infinity) - (b.precioNum || Infinity),
     );
@@ -252,7 +247,6 @@ export default function App() {
           return;
         }
 
-        // EXTRACCIÓN INTELIGENTE DEL PROVEEDOR
         const nombreProveedorLimpio = detectarNombreProveedor(archivo.name);
         const idUnico = Date.now().toString();
 
@@ -433,12 +427,8 @@ export default function App() {
               key={grupo.idUnico}
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200"
             >
-              {grupo.codigoPrincipal && (
-                <span className="inline-block text-[10px] font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 mb-1">
-                  Cód: {grupo.codigoPrincipal}
-                </span>
-              )}
-              <h2 className="text-base font-black text-gray-950 leading-tight mb-3">
+              {/* Título principal del repuesto agrupado */}
+              <h2 className="text-base font-black text-gray-950 leading-tight mb-3 uppercase">
                 {grupo.detalle}
               </h2>
 
@@ -450,14 +440,21 @@ export default function App() {
                       opc.esElMasBarato ? "bg-green-50/70" : ""
                     }`}
                   >
-                    <div className="flex items-center gap-2 truncate pr-2">
-                      <span className="text-sm font-bold text-gray-700 truncate">
-                        {opc.proveedor}{" "}
-                        {/* <--- ACÁ: Ahora dice "ARAX", "HADA", "REPCOR", etc. */}
-                      </span>
-                      {opc.esElMasBarato && (
-                        <span className="text-xs bg-green-600 text-white font-extrabold px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider animate-pulse">
-                          Recomendado ✅
+                    <div className="truncate pr-2">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="text-sm font-bold text-gray-700 truncate">
+                          {opc.proveedor}
+                        </span>
+                        {opc.esElMasBarato && (
+                          <span className="bg-green-600 text-white font-extrabold px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider">
+                            Recomendado ✅
+                          </span>
+                        )}
+                      </div>
+                      {/* Mostramos el código específico del artículo abajo del proveedor */}
+                      {opc.codigo && (
+                        <span className="block text-[10px] font-mono text-gray-400 mt-0.5">
+                          Cód: {opc.codigo}
                         </span>
                       )}
                     </div>
