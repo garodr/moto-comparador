@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
+import logoApp from "./assets/icono.png";
 
 // ==========================================
 // FUNCIONES AUXILIARES (Heurísticas y Normalización)
@@ -164,9 +165,9 @@ export default function App() {
     const archivo = e.target.files[0];
     if (!archivo) return;
 
-    if (archivosCargados.length >= 5) {
+    if (archivosCargados.length >= 6) {
       setErrores([
-        "Ya cargaste el máximo de 5 listas. Borrá alguna para sumar otra.",
+        "Ya cargaste el máximo de 6 listas. Borrá alguna para sumar otra.",
       ]);
       e.target.value = "";
       return;
@@ -300,7 +301,8 @@ export default function App() {
         {/* Cabecera */}
         <header className="mb-5 text-center sm:text-left">
           <h1 className="text-2xl font-black tracking-tight text-gray-900">
-            📊 Comparador de Precios Inteligente
+            <img src={logoApp} alt="Logo" className="w-8 h-8 object-contain" />{" "}
+            MotoList
           </h1>
           <p className="text-xs text-gray-500 mt-1">
             Buscá un repuesto y la app te dirá automáticamente cuál proveedor te
