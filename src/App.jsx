@@ -17,7 +17,6 @@ const normalizarTexto = (texto) => {
     .trim();
 };
 
-// Extrae el nombre limpio del proveedor basándose en el archivo
 const detectarNombreProveedor = (nombreArchivo) => {
   const textoLimpio = nombreArchivo.toUpperCase();
   const proveedores = [
@@ -53,14 +52,12 @@ const obtenerValorFlexible = (item, textoBuscar) => {
     : "No disponible";
 };
 
-// Búsqueda veloz apuntando al índice pre-calculado
 const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   if (terminosBusqueda.length === 0) return true;
   const stringItem = item._textoBusqueda || "";
   return terminosBusqueda.every((termino) => stringItem.includes(termino));
 };
 
-// Formateador exclusivo para Pesos Argentinos (Formato: $150.300)
 const formatearMonedaArgentina = (numero) => {
   if (numero === null || isNaN(numero)) return "S/D";
   const numeroRedondeado = Math.round(numero);
@@ -73,7 +70,6 @@ const formatearMonedaArgentina = (numero) => {
   );
 };
 
-// Parser de precios
 const parsearPrecio = (precioRaw) => {
   if (!precioRaw || precioRaw === "No disponible") return null;
 
@@ -93,7 +89,6 @@ const obtenerOpcionesValidas = (opciones) => {
   return opciones.filter((o) => o.precioNum !== null && !isNaN(o.precioNum));
 };
 
-// HEURÍSTICA DE AGRUPACIÓN CORREGIDA
 const agruparPorProducto = (itemsFiltrados) => {
   const grupos = {};
 
@@ -101,14 +96,11 @@ const agruparPorProducto = (itemsFiltrados) => {
     const detalle = obtenerValorFlexible(item, "DETALLE");
     const codigo = obtenerValorFlexible(item, "CODIGO");
 
-    // Limpieza de paréntesis finales (ej: "(ARAX)")
     const detalleLimpioBase =
       detalle !== "No disponible"
         ? detalle.replace(/\s*\([^)]*\)\s*$/, "").trim()
         : "Repuesto sin descripción";
 
-    // SOLUCIÓN: Agrupamos estrictamente por el nombre del repuesto base
-    // para ignorar que tengan códigos de artículo diferentes entre proveedores.
     const claveGrupo = `DET-${normalizarTexto(detalleLimpioBase)}`;
 
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
@@ -116,7 +108,7 @@ const agruparPorProducto = (itemsFiltrados) => {
 
     const ofertaProveedor = {
       proveedor: item.proveedorOrigen || "Desconocido",
-      codigo: codigo !== "No disponible" ? codigo : null, // Guardamos el código para mostrarlo individualmente
+      codigo: codigo !== "No disponible" ? codigo : null,
       precioNum: precioFinalNum,
       precioLista: obtenerValorFlexible(item, "PRECIO LISTA"),
       contado: obtenerValorFlexible(item, "CONTADO"),
@@ -149,7 +141,7 @@ const agruparPorProducto = (itemsFiltrados) => {
       });
     }
 
-    grupo.opciones = grupo.options = grupo.opciones.map((opc) => {
+    grupo.opciones = grupo.opciones.map((opc) => {
       const esMejor =
         opc.precioNum === precioMinimo &&
         opc.proveedor === mejorProveedor &&
@@ -170,7 +162,6 @@ const agruparPorProducto = (itemsFiltrados) => {
       };
     });
 
-    // Ordenamos las opciones internas del grupo de menor a mayor precio
     grupo.opciones.sort(
       (a, b) => (a.precioNum || Infinity) - (b.precioNum || Infinity),
     );
@@ -188,105 +179,136 @@ export default function App() {
   const [errores, setErrores] = useState([]);
   const [archivosCargados, setArchivosCargados] = useState([]);
 
-  const leerUnExcel = (e) => {
-    const archivo = e.target.files[0];
-    if (!archivo) return;
+  // NUEVA LÓGICA: Procesa una carpeta completa de archivos
+  const leerCarpetaDeExcel = async (e) => {
+    const archivosLista = Array.from(e.target.files);
+    if (archivosLista.length === 0) return;
 
-    if (archivosCargados.length >= 6) {
+    // Filtramos para quedarnos solo con archivos Excel válidos (ignorando archivos ocultos temporales de sistema)
+    const archivosExcel = archivosLista.filter(
+      (archivo) =>
+        (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) &&
+        !archivo.name.startsWith("~$"),
+    );
+
+    if (archivosExcel.length === 0) {
       setErrores([
-        "Ya cargaste el máximo de 6 listas. Borrá alguna para sumar otra.",
+        "No se encontraron archivos de Excel (.xlsx o .xls) válidos en la carpeta elegida.",
       ]);
       e.target.value = "";
       return;
     }
 
-    if (archivosCargados.some((a) => a.nombre === archivo.name)) {
-      setErrores([`El archivo "${archivo.name}" ya está cargado.`]);
-      e.target.value = "";
-      return;
+    setErrores([]);
+    let nuevosProductos = [];
+    let nuevosArchivosCargados = [...archivosCargados];
+    let listaErrores = [];
+
+    // Procesamos hasta un tope total de 6 listas en memoria
+    for (const archivo of archivosExcel) {
+      if (nuevosArchivosCargados.length >= 6) {
+        listaErrores.push(
+          "Se alcanzó el límite máximo de 6 listas. Algunos archivos se omitieron.",
+        );
+        break;
+      }
+
+      if (nuevosArchivosCargados.some((a) => a.nombre === archivo.name)) {
+        continue; // Si ya estaba cargada, la saltea silenciosamente
+      }
+
+      const promesaLectura = new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const data = evt.target.result;
+            const workbook = XLSX.read(data, { type: "binary" });
+            const nombreHoja = workbook.SheetNames[0];
+            const hoja = workbook.Sheets[nombreHoja];
+
+            const filas = XLSX.utils.sheet_to_json(hoja, { header: 1 });
+            if (filas.length === 0) {
+              resolve({ error: `"${archivo.name}" está vacío.` });
+              return;
+            }
+
+            const indexEncabezados = filas.findIndex((fila) =>
+              fila.some((celda) => {
+                const textoCelda = normalizarTexto(celda);
+                return (
+                  textoCelda.includes("codigo de articulo") ||
+                  textoCelda.includes("codigo") ||
+                  textoCelda.includes("detalle") ||
+                  textoCelda.includes("descripcion")
+                );
+              }),
+            );
+
+            const filaInicioDatos =
+              indexEncabezados !== -1 ? indexEncabezados : 0;
+            const datos = XLSX.utils.sheet_to_json(hoja, {
+              range: filaInicioDatos,
+            });
+
+            if (datos.length === 0) {
+              resolve({
+                error: `"${archivo.name}" no tiene filas estructuradas.`,
+              });
+              return;
+            }
+
+            const nombreProveedorLimpio = detectarNombreProveedor(archivo.name);
+            const idUnico = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+
+            const datosConProveedor = datos.map((item) => {
+              const codigo = obtenerValorFlexible(item, "CODIGO");
+              const detalle = obtenerValorFlexible(item, "DETALLE");
+              const textoIndexado = normalizarTexto(
+                `${codigo} ${detalle} ${nombreProveedorLimpio}`,
+              );
+
+              return {
+                ...item,
+                archivoId: idUnico,
+                proveedorOrigen: nombreProveedorLimpio,
+                _textoBusqueda: textoIndexado,
+              };
+            });
+
+            resolve({
+              productos: datosConProveedor,
+              archivoInfo: {
+                id: idUnico,
+                nombre: archivo.name,
+                proveedor: nombreProveedorLimpio,
+              },
+            });
+          } catch {
+            resolve({ error: `Error de formato en "${archivo.name}".` });
+          }
+        };
+        reader.readAsBinaryString(archivo);
+      });
+
+      const resultado = await promesaLectura;
+      if (resultado.error) {
+        listaErrores.push(resultado.error);
+      } else if (resultado.productos) {
+        nuevosProductos = [...nuevosProductos, ...resultado.productos];
+        nuevosArchivosCargados.push(resultado.archivoInfo);
+      }
     }
 
-    setErrores([]);
-    const reader = new FileReader();
+    if (nuevosProductos.length > 0) {
+      setProductos((prev) => [...prev, ...nuevosProductos]);
+      setArchivosCargados(nuevosArchivosCargados);
+    }
 
-    reader.onload = (evt) => {
-      try {
-        const data = evt.target.result;
-        const workbook = XLSX.read(data, { type: "binary" });
-        const nombreHoja = workbook.SheetNames[0];
-        const hoja = workbook.Sheets[nombreHoja];
+    if (listaErrores.length > 0) {
+      setErrores(listaErrores);
+    }
 
-        const filas = XLSX.utils.sheet_to_json(hoja, { header: 1 });
-
-        if (filas.length === 0) {
-          setErrores([`El archivo "${archivo.name}" está vacío.`]);
-          e.target.value = "";
-          return;
-        }
-
-        const indexEncabezados = filas.findIndex((fila) =>
-          fila.some((celda) => {
-            const textoCelda = normalizarTexto(celda);
-            return (
-              textoCelda.includes("codigo de articulo") ||
-              textoCelda.includes("codigo") ||
-              textoCelda.includes("detalle") ||
-              textoCelda.includes("descripcion")
-            );
-          }),
-        );
-
-        const filaInicioDatos = indexEncabezados !== -1 ? indexEncabezados : 0;
-        const datos = XLSX.utils.sheet_to_json(hoja, {
-          range: filaInicioDatos,
-        });
-
-        if (datos.length === 0) {
-          setErrores([`"${archivo.name}" no tiene filas válidas.`]);
-          e.target.value = "";
-          return;
-        }
-
-        const nombreProveedorLimpio = detectarNombreProveedor(archivo.name);
-        const idUnico = Date.now().toString();
-
-        const datosConProveedor = datos.map((item) => {
-          const codigo = obtenerValorFlexible(item, "CODIGO");
-          const detalle = obtenerValorFlexible(item, "DETALLE");
-
-          const textoIndexado = normalizarTexto(
-            `${codigo} ${detalle} ${nombreProveedorLimpio}`,
-          );
-
-          return {
-            ...item,
-            archivoId: idUnico,
-            proveedorOrigen: nombreProveedorLimpio,
-            _textoBusqueda: textoIndexado,
-          };
-        });
-
-        setProductos((prevProductos) => [
-          ...prevProductos,
-          ...datosConProveedor,
-        ]);
-        setArchivosCargados((prevArchivos) => [
-          ...prevArchivos,
-          {
-            id: idUnico,
-            nombre: archivo.name,
-            proveedor: nombreProveedorLimpio,
-          },
-        ]);
-
-        e.target.value = "";
-      } catch {
-        setErrores([`Error de formato en "${archivo.name}".`]);
-        e.target.value = "";
-      }
-    };
-
-    reader.readAsBinaryString(archivo);
+    e.target.value = "";
   };
 
   const eliminarListaIndividual = (idParaEliminar) => {
@@ -337,7 +359,7 @@ export default function App() {
           </p>
         </header>
 
-        {/* Zona de Carga */}
+        {/* Zona de Carga Inteligente de Carpetas */}
         <div className="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-gray-200">
           <div className="flex justify-between items-center mb-3">
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
@@ -354,14 +376,21 @@ export default function App() {
           </div>
 
           {archivosCargados.length < 6 ? (
-            <label className="flex flex-col items-center justify-center w-full h-14 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-xl cursor-pointer active:bg-blue-100 transition-colors">
-              <div className="flex items-center gap-2 text-sm font-bold text-blue-700">
-                ➕ <span>Sumar lista de proveedor</span>
+            <label className="flex flex-col items-center justify-center w-full h-16 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-xl cursor-pointer active:bg-blue-100 transition-colors">
+              <div className="flex flex-col items-center text-center p-1">
+                <span className="text-sm font-bold text-blue-700">
+                  📂 Cargar carpeta con listas
+                </span>
+                <span className="text-[10px] text-blue-400 mt-0.5">
+                  Sube tus 6 archivos .xlsx juntos
+                </span>
               </div>
+              {/* ATRIBUTOS CLAVE: webkitdirectory y directory habilitan la selección de carpetas */}
               <input
                 type="file"
-                accept=".xlsx, .xls"
-                onChange={leerUnExcel}
+                webkitdirectory=""
+                directory=""
+                onChange={leerCarpetaDeExcel}
                 className="hidden"
               />
             </label>
@@ -427,7 +456,6 @@ export default function App() {
               key={grupo.idUnico}
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200"
             >
-              {/* Título principal del repuesto agrupado */}
               <h2 className="text-base font-black text-gray-950 leading-tight mb-3 uppercase">
                 {grupo.detalle}
               </h2>
@@ -451,7 +479,6 @@ export default function App() {
                           </span>
                         )}
                       </div>
-                      {/* Mostramos el código específico del artículo abajo del proveedor */}
                       {opc.codigo && (
                         <span className="block text-[10px] font-mono text-gray-400 mt-0.5">
                           Cód: {opc.codigo}
