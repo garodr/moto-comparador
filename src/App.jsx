@@ -1,6 +1,9 @@
 import { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
-import logoApp from "./assets/logo.svg"; // IMPORTÁ ACÁ TU LOGO (Asegurate de que la ruta sea correcta)
+
+// IMPORTACIÓN DE IMÁGENES: Actualizadas según tus nuevos nombres de archivo
+import iconoApp from "./assets/icono.png";
+import nombreApp from "./assets/nombre.png";
 
 // ==========================================
 // FUNCIONES AUXILIARES (Heurísticas y Normalización)
@@ -163,7 +166,6 @@ export default function App() {
     const archivo = e.target.files[0];
     if (!archivo) return;
 
-    // ACTUALIZADO: Ahora el límite de validación es de 6 listas
     if (archivosCargados.length >= 6) {
       setErrores([
         "Ya cargaste el máximo de 6 listas. Borrá alguna para sumar otra.",
@@ -294,17 +296,24 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 md:p-6 text-gray-800 font-sans antialiased">
       <div className="max-w-xl mx-auto">
-        {/* Cabecera */}
-        <header className="mb-5 text-center sm:text-left">
-          <h1 className="text-2xl font-black tracking-tight text-gray-900 flex items-center justify-center sm:justify-start gap-2.5">
+        {/* Cabecera Modificada */}
+        <header className="mb-5 flex flex-col items-center sm:items-start">
+          {/* Contenedor Flex: Asegura el ícono al lado de la imagen del nombre */}
+          <div className="flex items-center justify-center sm:justify-start gap-3 mb-1">
+            {/* Ícono de la app (icono.png) */}
             <img
-              src={logoApp}
-              alt="Logo App"
-              className="w-8 h-8 object-contain"
+              src={iconoApp}
+              alt="Ícono"
+              className="w-9 h-9 object-contain flex-shrink-0"
             />
-            <span>Comparador de Precios Inteligente</span>
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
+            {/* Imagen con el nombre/texto de la app (nombre.png) */}
+            <img
+              src={nombreApp}
+              alt="Nombre de la App"
+              className="h-7 w-auto object-contain"
+            />
+          </div>
+          <p className="text-xs text-gray-500 text-center sm:text-left pl-0 sm:pl-0.5">
             Buscá un repuesto y la app te dirá automáticamente cuál proveedor te
             conviene.
           </p>
@@ -313,7 +322,6 @@ export default function App() {
         {/* Zona de Carga */}
         <div className="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-gray-200">
           <div className="flex justify-between items-center mb-3">
-            {/* ACTUALIZADO: Texto en el header indicando /6 */}
             <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
               Listas en memoria ({archivosCargados.length}/6)
             </span>
@@ -327,7 +335,6 @@ export default function App() {
             )}
           </div>
 
-          {/* ACTUALIZADO: Condicional modificado para bloquear a partir de 6 */}
           {archivosCargados.length < 6 ? (
             <label className="flex flex-col items-center justify-center w-full h-14 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-xl cursor-pointer active:bg-blue-100 transition-colors">
               <div className="flex items-center gap-2 text-sm font-bold text-blue-700">
