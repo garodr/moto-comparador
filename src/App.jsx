@@ -17,6 +17,33 @@ const normalizarTexto = (texto) => {
     .trim();
 };
 
+// NUEVA FUNCIÓN: Extrae el nombre limpio del proveedor del archivo o del texto
+const detectarNombreProveedor = (nombreArchivo) => {
+  const textoLimpio = nombreArchivo.toUpperCase();
+
+  // Lista de tus proveedores conocidos
+  const proveedores = [
+    "ARAX",
+    "HADA",
+    "REPCOR",
+    "ROHAN",
+    "CATALANO",
+    "WStandard",
+  ];
+
+  // Si encuentra la palabra clave en el nombre del archivo, usa esa
+  const encontrado = proveedores.find((p) => textoLimpio.includes(p));
+  if (encontrado) return encontrado;
+
+  // Si no es ninguno de los conocidos, limpia el ".xlsx" y saca "LISTA DE PRECIOS" si existe
+  return nombreArchivo
+    .replace(/\.[^/.]+$/, "") // Quita extensión
+    .replace(/LISTA DE PRECIOS/i, "")
+    .replace(/MAYO|JUNIO|JULIO|AGOSTO|DE/i, "") // Quita meses comunes o conectores
+    .trim()
+    .toUpperCase();
+};
+
 const obtenerValorFlexible = (item, textoBuscar) => {
   if (!item) return "No disponible";
   const terminoLimpio = normalizarTexto(textoBuscar);
@@ -82,16 +109,22 @@ const agruparPorProducto = (itemsFiltrados) => {
     const detalle = obtenerValorFlexible(item, "DETALLE");
     const codigo = obtenerValorFlexible(item, "CODIGO");
 
+    // Limpia textos finales entre paréntesis (ej: "(ARAX)", "(HADA)")
+    const detalleLimpioBase =
+      detalle !== "No disponible"
+        ? detalle.replace(/\s*\([^)]*\)\s*$/, "").trim()
+        : "Repuesto sin descripción";
+
     const claveGrupo =
       codigo !== "No disponible"
         ? `COD-${normalizarTexto(codigo)}`
-        : `DET-${normalizarTexto(detalle)}`;
+        : `DET-${normalizarTexto(detalleLimpioBase)}`;
 
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
     const precioFinalNum = parsearPrecio(precioRaw);
 
     const ofertaProveedor = {
-      proveedor: item.proveedorOrigen || "Desconocido",
+      proveedor: item.proveedorOrigen || "Desconocido", // Acá ya viene el nombre limpio (Ej: ARAX)
       codigo: codigo !== "No disponible" ? codigo : "SIN-CODIGO",
       precioNum: precioFinalNum,
       precioLista: obtenerValorFlexible(item, "PRECIO LISTA"),
@@ -101,8 +134,7 @@ const agruparPorProducto = (itemsFiltrados) => {
     if (!grupos[claveGrupo]) {
       grupos[claveGrupo] = {
         idUnico: claveGrupo,
-        detalle:
-          detalle !== "No disponible" ? detalle : "Repuesto sin descripción",
+        detalle: detalleLimpioBase,
         codigoPrincipal: codigo !== "No disponible" ? codigo : null,
         opciones: [],
       };
@@ -118,14 +150,13 @@ const agruparPorProducto = (itemsFiltrados) => {
 
     if (opcionesConPrecio.length > 0) {
       opcionesConPrecio.forEach((opc) => {
-        if (opc.precioNum < precioMinimo) {
+        if (opc.precioNum !== null && opc.precioNum < precioMinimo) {
           precioMinimo = opc.precioNum;
           mejorProveedor = opc.proveedor;
         }
       });
     }
 
-    // CORRECCIÓN: Eliminado el 'groupOpciones' fantasma que rompía el build
     grupo.opciones = grupo.opciones.map((opc) => {
       const esMejor =
         opc.precioNum === precioMinimo && opc.proveedor === mejorProveedor;
@@ -221,7 +252,8 @@ export default function App() {
           return;
         }
 
-        const nombreProveedor = archivo.name.replace(/\.[^/.]+$/, "");
+        // EXTRACCIÓN INTELIGENTE DEL PROVEEDOR
+        const nombreProveedorLimpio = detectarNombreProveedor(archivo.name);
         const idUnico = Date.now().toString();
 
         const datosConProveedor = datos.map((item) => {
@@ -229,13 +261,13 @@ export default function App() {
           const detalle = obtenerValorFlexible(item, "DETALLE");
 
           const textoIndexado = normalizarTexto(
-            `${codigo} ${detalle} ${nombreProveedor}`,
+            `${codigo} ${detalle} ${nombreProveedorLimpio}`,
           );
 
           return {
             ...item,
             archivoId: idUnico,
-            proveedorOrigen: nombreProveedor,
+            proveedorOrigen: nombreProveedorLimpio,
             _textoBusqueda: textoIndexado,
           };
         });
@@ -246,12 +278,15 @@ export default function App() {
         ]);
         setArchivosCargados((prevArchivos) => [
           ...prevArchivos,
-          { id: idUnico, nombre: archivo.name, proveedor: nombreProveedor },
+          {
+            id: idUnico,
+            nombre: archivo.name,
+            proveedor: nombreProveedorLimpio,
+          },
         ]);
 
         e.target.value = "";
       } catch {
-        // CORRECCIÓN: Quitamos el parámetro 'err' sin usar para evitar la advertencia de ESLint
         setErrores([`Error de formato en "${archivo.name}".`]);
         e.target.value = "";
       }
@@ -417,7 +452,8 @@ export default function App() {
                   >
                     <div className="flex items-center gap-2 truncate pr-2">
                       <span className="text-sm font-bold text-gray-700 truncate">
-                        {opc.proveedor}
+                        {opc.proveedor}{" "}
+                        {/* <--- ACÁ: Ahora dice "ARAX", "HADA", "REPCOR", etc. */}
                       </span>
                       {opc.esElMasBarato && (
                         <span className="text-xs bg-green-600 text-white font-extrabold px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider animate-pulse">
