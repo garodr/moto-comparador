@@ -179,12 +179,10 @@ export default function App() {
   const [errores, setErrores] = useState([]);
   const [archivosCargados, setArchivosCargados] = useState([]);
 
-  // NUEVA LÓGICA: Procesa una carpeta completa de archivos
   const leerCarpetaDeExcel = async (e) => {
     const archivosLista = Array.from(e.target.files);
     if (archivosLista.length === 0) return;
 
-    // Filtramos para quedarnos solo con archivos Excel válidos (ignorando archivos ocultos temporales de sistema)
     const archivosExcel = archivosLista.filter(
       (archivo) =>
         (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) &&
@@ -204,7 +202,6 @@ export default function App() {
     let nuevosArchivosCargados = [...archivosCargados];
     let listaErrores = [];
 
-    // Procesamos hasta un tope total de 6 listas en memoria
     for (const archivo of archivosExcel) {
       if (nuevosArchivosCargados.length >= 6) {
         listaErrores.push(
@@ -214,7 +211,7 @@ export default function App() {
       }
 
       if (nuevosArchivosCargados.some((a) => a.nombre === archivo.name)) {
-        continue; // Si ya estaba cargada, la saltea silenciosamente
+        continue;
       }
 
       const promesaLectura = new Promise((resolve) => {
@@ -345,47 +342,27 @@ export default function App() {
   }, [rawFiltrados]);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-3 md:p-6 text-gray-800 font-sans antialiased">
-      <div className="max-w-xl mx-auto">
+    <div className="min-h-screen bg-gray-50 p-3 md:p-6 text-gray-800 font-sans antialiased flex flex-col justify-between">
+      <div className="max-w-xl mx-auto w-full flex-grow">
         {/* Cabecera limpia con Logo Centrado */}
-        <header className="mb-6 flex flex-col items-center">
+        <header className="mb-4 flex flex-col items-center">
           <img
             src={logoApp}
             alt="Motolist Logo"
-            className="h-24 w-auto object-contain mb-2"
+            className="h-20 w-auto object-contain mb-1"
           />
-          <p className="text-xs text-gray-400 font-medium text-center tracking-wide">
+          <p className="text-[11px] text-gray-400 font-medium text-center tracking-wide">
             Buscá un repuesto y encontrá al instante el mejor proveedor.
           </p>
         </header>
 
-        {/* Zona de Carga Inteligente de Carpetas */}
-        <div className="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-gray-200">
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
-              Listas en memoria ({archivosCargados.length}/6)
-            </span>
-            {archivosCargados.length > 0 && (
-              <button
-                onClick={limpiarTodo}
-                className="text-xs font-bold text-red-500 active:text-red-700 bg-red-50 px-2.5 py-1 rounded-lg"
-              >
-                Borrar todas
-              </button>
-            )}
-          </div>
-
-          {archivosCargados.length < 6 ? (
-            <label className="flex flex-col items-center justify-center w-full h-16 border-2 border-dashed border-blue-200 bg-blue-50/50 rounded-xl cursor-pointer active:bg-blue-100 transition-colors">
-              <div className="flex flex-col items-center text-center p-1">
-                <span className="text-sm font-bold text-blue-700">
-                  📂 Cargar carpeta con listas
-                </span>
-                <span className="text-[10px] text-blue-400 mt-0.5">
-                  Sube tus 6 archivos .xlsx juntos
-                </span>
-              </div>
-              {/* ATRIBUTOS CLAVE: webkitdirectory y directory habilitan la selección de carpetas */}
+        {/* Botón de Carga: Siempre visible arriba para comodidad */}
+        {archivosCargados.length < 6 && (
+          <div className="mb-4">
+            <label className="flex flex-col items-center justify-center w-full h-12 border border-dashed border-blue-300 bg-blue-50/40 rounded-xl cursor-pointer active:bg-blue-100/70 transition-colors">
+              <span className="text-xs font-bold text-blue-700">
+                📂 Cargar carpeta con listas
+              </span>
               <input
                 type="file"
                 webkitdirectory=""
@@ -394,51 +371,21 @@ export default function App() {
                 className="hidden"
               />
             </label>
-          ) : (
-            <div className="text-center p-3 bg-amber-50 border border-amber-200 text-amber-800 font-medium rounded-xl text-xs">
-              🔒 Límite de 6 listas alcanzado.
-            </div>
-          )}
-
-          {archivosCargados.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-gray-100 space-y-2">
-              {archivosCargados.map((archivo) => (
-                <div
-                  key={archivo.id}
-                  className="flex items-center justify-between bg-gray-50 p-2.5 rounded-xl border border-gray-200"
-                >
-                  <div className="truncate pr-3">
-                    <p className="text-xs font-bold text-gray-700 truncate">
-                      {archivo.proveedor}
-                    </p>
-                    <p className="text-[10px] text-gray-400 truncate">
-                      {archivo.nombre}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => eliminarListaIndividual(archivo.id)}
-                    className="p-1 px-2.5 text-xs font-black text-gray-400 active:text-red-600 rounded-lg"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Mensajes de Alerta */}
         {errores.length > 0 && (
-          <div className="bg-red-50 text-red-700 p-3.5 rounded-xl mb-4 border border-red-100 text-xs font-semibold space-y-1">
+          <div className="bg-red-50 text-red-700 p-3 rounded-xl mb-4 border border-red-100 text-xs font-semibold space-y-1">
             {errores.map((err, i) => (
               <p key={i}>⚠️ {err}</p>
             ))}
           </div>
         )}
 
-        {/* Buscador Pegajoso */}
+        {/* Buscador Pegajoso Superior */}
         {productos.length > 0 && (
-          <div className="sticky top-2 z-20 my-3 shadow-md rounded-xl">
+          <div className="sticky top-2 z-20 mb-4 shadow-md rounded-xl">
             <input
               type="text"
               placeholder="Ej: 'bujia' o 'pastilla freno'..."
@@ -449,8 +396,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Listado Comparativo Visual */}
-        <div className="space-y-3">
+        {/* Listado Comparativo Principal */}
+        <div className="space-y-3 mb-8">
           {productosAgrupados.slice(0, 50).map((grupo) => (
             <div
               key={grupo.idUnico}
@@ -513,6 +460,47 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* SECCIÓN TRASLADADA: Listas en memoria abajo de todo */}
+        {archivosCargados.length > 0 && (
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mt-6">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Listas cargadas en memoria ({archivosCargados.length}/6)
+              </span>
+              <button
+                onClick={limpiarTodo}
+                className="text-xs font-bold text-red-500 active:text-red-700 bg-red-50 px-2 py-1 rounded-lg"
+              >
+                Resetear Todo
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              {archivosCargados.map((archivo) => (
+                <div
+                  key={archivo.id}
+                  className="flex items-center justify-between bg-gray-50 p-2 rounded-xl border border-gray-150"
+                >
+                  <div className="truncate pr-2">
+                    <p className="text-xs font-bold text-gray-600 truncate">
+                      {archivo.proveedor}
+                    </p>
+                    <p className="text-[9px] text-gray-400 truncate">
+                      {archivo.nombre}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => eliminarListaIndividual(archivo.id)}
+                    className="text-xs font-black text-gray-400 hover:text-red-600 px-2 py-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
