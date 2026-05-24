@@ -17,24 +17,18 @@ const normalizarTexto = (texto) => {
     .trim();
 };
 
+// Extrae el nombre limpio del proveedor basándose en el archivo
 const detectarNombreProveedor = (nombreArchivo) => {
   const textoLimpio = nombreArchivo.toUpperCase();
-  const proveedores = [
-    "ARAX",
-    "HADA",
-    "REPCOR",
-    "ROHAN",
-    "CATALANO",
-    "WSTANDARD",
-  ];
-
-  const encontrado = proveedores.find((p) => textoLimpio.includes(p));
+  const proveedores = ["ARAX", "HADA", "REPCOR", "ROHAN", "CATALANO", "WSTANDARD"]; 
+  
+  const encontrado = proveedores.find(p => textoLimpio.includes(p));
   if (encontrado) return encontrado;
 
   return nombreArchivo
-    .replace(/\.[^/.]+$/, "")
+    .replace(/\.[^/.]+$/, "") 
     .replace(/LISTA DE PRECIOS/i, "")
-    .replace(/MAYO|JUNIO|JULIO|AGOSTO|DE/i, "")
+    .replace(/MAYO|JUNIO|JULIO|AGOSTO|DE/i, "") 
     .trim()
     .toUpperCase();
 };
@@ -42,83 +36,83 @@ const detectarNombreProveedor = (nombreArchivo) => {
 const obtenerValorFlexible = (item, textoBuscar) => {
   if (!item) return "No disponible";
   const terminoLimpio = normalizarTexto(textoBuscar);
-
+  
   const claveReales = Object.keys(item).find((key) =>
-    normalizarTexto(key).includes(terminoLimpio),
+    normalizarTexto(key).includes(terminoLimpio)
   );
-
-  return claveReales && item[claveReales] !== undefined
-    ? item[claveReales]
-    : "No disponible";
+  
+  return claveReales && item[claveReales] !== undefined ? item[claveReales] : "No disponible";
 };
 
+// Búsqueda veloz apuntando al índice pre-calculado
 const cumpleBusquedaSegura = (item, terminosBusqueda) => {
   if (terminosBusqueda.length === 0) return true;
   const stringItem = item._textoBusqueda || "";
   return terminosBusqueda.every((termino) => stringItem.includes(termino));
 };
 
+// Formateador exclusivo para Pesos Argentinos (Formato: $150.300)
 const formatearMonedaArgentina = (numero) => {
   if (numero === null || isNaN(numero)) return "S/D";
   const numeroRedondeado = Math.round(numero);
-  return (
-    "$" +
-    numeroRedondeado.toLocaleString("es-AR", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    })
-  );
+  return "$" + numeroRedondeado.toLocaleString("es-AR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
 };
 
+// Parser de precios inteligente
 const parsearPrecio = (precioRaw) => {
   if (!precioRaw || precioRaw === "No disponible") return null;
-
+  
   let limpio = String(precioRaw).trim();
   if (limpio.includes(",") && limpio.includes(".")) {
     limpio = limpio.replace(/\./g, "").replace(/,/g, ".");
   } else if (limpio.includes(",")) {
     limpio = limpio.replace(/,/g, ".");
   }
-
+  
   limpio = limpio.replace(/[^0-9.-]+/g, "");
   const numero = parseFloat(limpio);
   return isNaN(numero) ? null : numero;
 };
 
 const obtenerOpcionesValidas = (opciones) => {
-  return opciones.filter((o) => o.precioNum !== null && !isNaN(o.precioNum));
+  return opciones.filter(o => o.precioNum !== null && !isNaN(o.precioNum));
 };
 
+// HEURÍSTICA DE AGRUPACIÓN POR DETALLE
 const agruparPorProducto = (itemsFiltrados) => {
   const grupos = {};
 
   itemsFiltrados.forEach((item) => {
     const detalle = obtenerValorFlexible(item, "DETALLE");
     const codigo = obtenerValorFlexible(item, "CODIGO");
+    
+    // Limpieza de paréntesis finales (ej: "(ARAX)")
+    const detalleLimpioBase = detalle !== "No disponible" 
+      ? detalle.replace(/\s*\([^)]*\)\s*$/, "").trim() 
+      : "Repuesto sin descripción";
 
-    const detalleLimpioBase =
-      detalle !== "No disponible"
-        ? detalle.replace(/\s*\([^)]*\)\s*$/, "").trim()
-        : "Repuesto sin descripción";
-
+    // Agrupamos estrictamente por el nombre del repuesto base para obviar códigos de distribuidor
     const claveGrupo = `DET-${normalizarTexto(detalleLimpioBase)}`;
 
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
     const precioFinalNum = parsearPrecio(precioRaw);
 
     const ofertaProveedor = {
-      proveedor: item.proveedorOrigen || "Desconocido",
-      codigo: codigo !== "No disponible" ? codigo : null,
+      proveedor: item.providerOrigen || item.proveedorOrigen || "Desconocido",
+      codigo: codigo !== "No disponible" ? codigo : null, 
       precioNum: precioFinalNum,
       precioLista: obtenerValorFlexible(item, "PRECIO LISTA"),
-      contado: obtenerValorFlexible(item, "CONTADO"),
+      contado: obtenerValorFlexible(item, "CONTADO")
     };
 
     if (!grupos[claveGrupo]) {
       grupos[claveGrupo] = {
         idUnico: claveGrupo,
         detalle: detalleLimpioBase,
-        opciones: [],
+        opciones: []
       };
     }
     grupos[claveGrupo].opciones.push(ofertaProveedor);
@@ -132,7 +126,7 @@ const agruparPorProducto = (itemsFiltrados) => {
     let mejorCodigo = null;
 
     if (opcionesConPrecio.length > 0) {
-      opcionesConPrecio.forEach((opc) => {
+      opcionesConPrecio.forEach(opc => {
         if (opc.precioNum !== null && opc.precioNum < precioMinimo) {
           precioMinimo = opc.precioNum;
           mejorProveedor = opc.proveedor;
@@ -141,30 +135,25 @@ const agruparPorProducto = (itemsFiltrados) => {
       });
     }
 
-    grupo.opciones = grupo.opciones.map((opc) => {
-      const esMejor =
-        opc.precioNum === precioMinimo &&
-        opc.proveedor === mejorProveedor &&
-        opc.codigo === mejorCodigo;
+    // Mapeo limpio y libre de errores eslint
+    grupo.opciones = grupo.opciones.map(opc => {
+      const esMejor = opc.precioNum === precioMinimo && opc.proveedor === mejorProveedor && opc.codigo === mejorCodigo;
       let diferenciaTexto = "";
 
       if (opc.precioNum !== null && precioMinimo !== Infinity && !esMejor) {
-        const difPorcentaje = Math.round(
-          ((opc.precioNum - precioMinimo) / precioMinimo) * 100,
-        );
+        const difPorcentaje = Math.round(((opc.precioNum - precioMinimo) / precioMinimo) * 100);
         diferenciaTexto = `(+${difPorcentaje}%)`;
       }
 
       return {
         ...opc,
         esElMasBarato: esMejor,
-        diferencia: diferenciaTexto,
+        diferencia: diferenciaTexto
       };
     });
 
-    grupo.opciones.sort(
-      (a, b) => (a.precioNum || Infinity) - (b.precioNum || Infinity),
-    );
+    // Ordenamos las opciones internas del grupo de menor a mayor precio
+    grupo.opciones.sort((a, b) => (a.precioNum || Infinity) - (b.precioNum || Infinity));
 
     return grupo;
   });
@@ -179,20 +168,18 @@ export default function App() {
   const [errores, setErrores] = useState([]);
   const [archivosCargados, setArchivosCargados] = useState([]);
 
+  // Procesa una carpeta completa de archivos de forma asíncrona
   const leerCarpetaDeExcel = async (e) => {
     const archivosLista = Array.from(e.target.files);
     if (archivosLista.length === 0) return;
 
-    const archivosExcel = archivosLista.filter(
-      (archivo) =>
-        (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) &&
-        !archivo.name.startsWith("~$"),
+    // Filtramos para quedarnos solo con archivos Excel válidos y activos
+    const archivosExcel = archivosLista.filter(archivo => 
+      (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) && !archivo.name.startsWith("~$")
     );
 
     if (archivosExcel.length === 0) {
-      setErrores([
-        "No se encontraron archivos de Excel (.xlsx o .xls) válidos en la carpeta elegida.",
-      ]);
+      setErrores(["No se encontraron archivos de Excel (.xlsx o .xls) válidos en la carpeta elegida."]);
       e.target.value = "";
       return;
     }
@@ -202,16 +189,15 @@ export default function App() {
     let nuevosArchivosCargados = [...archivosCargados];
     let listaErrores = [];
 
+    // Procesamos hasta un tope absoluto de 6 listas en memoria
     for (const archivo of archivosExcel) {
       if (nuevosArchivosCargados.length >= 6) {
-        listaErrores.push(
-          "Se alcanzó el límite máximo de 6 listas. Algunos archivos se omitieron.",
-        );
+        listaErrores.push("Se alcanzó el límite máximo de 6 listas. Algunos archivos se omitieron.");
         break;
       }
 
-      if (nuevosArchivosCargados.some((a) => a.nombre === archivo.name)) {
-        continue;
+      if (nuevosArchivosCargados.some(a => a.nombre === archivo.name)) {
+        continue; // Ignora duplicados en la misma subida
       }
 
       const promesaLectura = new Promise((resolve) => {
@@ -222,7 +208,7 @@ export default function App() {
             const workbook = XLSX.read(data, { type: "binary" });
             const nombreHoja = workbook.SheetNames[0];
             const hoja = workbook.Sheets[nombreHoja];
-
+            
             const filas = XLSX.utils.sheet_to_json(hoja, { header: 1 });
             if (filas.length === 0) {
               resolve({ error: `"${archivo.name}" está vacío.` });
@@ -230,56 +216,46 @@ export default function App() {
             }
 
             const indexEncabezados = filas.findIndex((fila) =>
-              fila.some((celda) => {
+              fila.some(celda => {
                 const textoCelda = normalizarTexto(celda);
                 return (
-                  textoCelda.includes("codigo de articulo") ||
-                  textoCelda.includes("codigo") ||
+                  textoCelda.includes("codigo de articulo") || 
+                  textoCelda.includes("codigo") || 
                   textoCelda.includes("detalle") ||
                   textoCelda.includes("descripcion")
                 );
-              }),
+              })
             );
 
-            const filaInicioDatos =
-              indexEncabezados !== -1 ? indexEncabezados : 0;
-            const datos = XLSX.utils.sheet_to_json(hoja, {
-              range: filaInicioDatos,
-            });
-
+            const filaInicioDatos = indexEncabezados !== -1 ? indexEncabezados : 0;
+            const datos = XLSX.utils.sheet_to_json(hoja, { range: filaInicioDatos });
+            
             if (datos.length === 0) {
-              resolve({
-                error: `"${archivo.name}" no tiene filas estructuradas.`,
-              });
+              resolve({ error: `"${archivo.name}" no tiene filas estructuradas.` });
               return;
             }
 
             const nombreProveedorLimpio = detectarNombreProveedor(archivo.name);
             const idUnico = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
-            const datosConProveedor = datos.map((item) => {
+            const datosConProveedor = datos.map(item => {
               const codigo = obtenerValorFlexible(item, "CODIGO");
               const detalle = obtenerValorFlexible(item, "DETALLE");
-              const textoIndexado = normalizarTexto(
-                `${codigo} ${detalle} ${nombreProveedorLimpio}`,
-              );
+              const textoIndexado = normalizarTexto(`${codigo} ${detalle} ${nombreProveedorLimpio}`);
 
               return {
                 ...item,
                 archivoId: idUnico,
                 proveedorOrigen: nombreProveedorLimpio,
-                _textoBusqueda: textoIndexado,
+                _textoBusqueda: textoIndexado
               };
             });
 
             resolve({
               productos: datosConProveedor,
-              archivoInfo: {
-                id: idUnico,
-                nombre: archivo.name,
-                proveedor: nombreProveedorLimpio,
-              },
+              archivoInfo: { id: idUnico, nombre: archivo.name, proveedor: nombreProveedorLimpio }
             });
+
           } catch {
             resolve({ error: `Error de formato en "${archivo.name}".` });
           }
@@ -300,7 +276,7 @@ export default function App() {
       setProductos((prev) => [...prev, ...nuevosProductos]);
       setArchivosCargados(nuevosArchivosCargados);
     }
-
+    
     if (listaErrores.length > 0) {
       setErrores(listaErrores);
     }
@@ -309,12 +285,8 @@ export default function App() {
   };
 
   const eliminarListaIndividual = (idParaEliminar) => {
-    setProductos((prevProductos) =>
-      prevProductos.filter((p) => p.archivoId !== idParaEliminar),
-    );
-    setArchivosCargados((prevArchivos) =>
-      prevArchivos.filter((a) => a.id !== idParaEliminar),
-    );
+    setProductos((prevProductos) => prevProductos.filter(p => p.archivoId !== idParaEliminar));
+    setArchivosCargados((prevArchivos) => prevArchivos.filter(a => a.id !== idParaEliminar));
     setErrores([]);
   };
 
@@ -326,15 +298,11 @@ export default function App() {
   };
 
   const terminosBusqueda = useMemo(() => {
-    return normalizarTexto(busqueda)
-      .split(" ")
-      .filter((t) => t.length > 0);
+    return normalizarTexto(busqueda).split(" ").filter((t) => t.length > 0);
   }, [busqueda]);
 
   const rawFiltrados = useMemo(() => {
-    return productos.filter((item) =>
-      cumpleBusquedaSegura(item, terminosBusqueda),
-    );
+    return productos.filter((item) => cumpleBusquedaSegura(item, terminosBusqueda));
   }, [productos, terminosBusqueda]);
 
   const productosAgrupados = useMemo(() => {
@@ -344,31 +312,30 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 md:p-6 text-gray-800 font-sans antialiased flex flex-col justify-between">
       <div className="max-w-xl mx-auto w-full flex-grow">
+        
         {/* Cabecera limpia con Logo Centrado */}
         <header className="mb-4 flex flex-col items-center">
-          <img
-            src={logoApp}
-            alt="Motolist Logo"
-            className="h-20 w-auto object-contain mb-1"
+          <img 
+            src={logoApp} 
+            alt="Motolist Logo" 
+            className="h-20 w-auto object-contain mb-1" 
           />
           <p className="text-[11px] text-gray-400 font-medium text-center tracking-wide">
             Buscá un repuesto y encontrá al instante el mejor proveedor.
           </p>
         </header>
 
-        {/* Botón de Carga: Siempre visible arriba para comodidad */}
+        {/* Botón de Carga: Siempre accesible arriba para comodidad */}
         {archivosCargados.length < 6 && (
           <div className="mb-4">
             <label className="flex flex-col items-center justify-center w-full h-12 border border-dashed border-blue-300 bg-blue-50/40 rounded-xl cursor-pointer active:bg-blue-100/70 transition-colors">
-              <span className="text-xs font-bold text-blue-700">
-                📂 Cargar carpeta con listas
-              </span>
-              <input
-                type="file"
-                webkitdirectory=""
-                directory=""
-                onChange={leerCarpetaDeExcel}
-                className="hidden"
+              <span className="text-xs font-bold text-blue-700">📂 Cargar carpeta con listas</span>
+              <input 
+                type="file" 
+                webkitdirectory="" 
+                directory="" 
+                onChange={leerCarpetaDeExcel} 
+                className="hidden" 
               />
             </label>
           </div>
@@ -377,9 +344,7 @@ export default function App() {
         {/* Mensajes de Alerta */}
         {errores.length > 0 && (
           <div className="bg-red-50 text-red-700 p-3 rounded-xl mb-4 border border-red-100 text-xs font-semibold space-y-1">
-            {errores.map((err, i) => (
-              <p key={i}>⚠️ {err}</p>
-            ))}
+            {errores.map((err, i) => <p key={i}>⚠️ {err}</p>)}
           </div>
         )}
 
@@ -399,8 +364,8 @@ export default function App() {
         {/* Listado Comparativo Principal */}
         <div className="space-y-3 mb-8">
           {productosAgrupados.slice(0, 50).map((grupo) => (
-            <div
-              key={grupo.idUnico}
+            <div 
+              key={grupo.idUnico} 
               className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200"
             >
               <h2 className="text-base font-black text-gray-950 leading-tight mb-3 uppercase">
@@ -409,8 +374,8 @@ export default function App() {
 
               <div className="bg-gray-50 rounded-xl border border-gray-100 divide-y divide-gray-100 overflow-hidden">
                 {grupo.opciones.map((opc) => (
-                  <div
-                    key={`${opc.proveedor}-${opc.codigo}`}
+                  <div 
+                    key={`${opc.proveedor}-${opc.codigo}`} 
                     className={`p-3 flex items-center justify-between transition-colors ${
                       opc.esElMasBarato ? "bg-green-50/70" : ""
                     }`}
@@ -434,14 +399,12 @@ export default function App() {
                     </div>
 
                     <div className="text-right flex-shrink-0">
-                      <span
-                        className={`text-base font-black ${
-                          opc.esElMasBarato ? "text-green-700" : "text-gray-900"
-                        }`}
-                      >
+                      <span className={`text-base font-black ${
+                        opc.esElMasBarato ? "text-green-700" : "text-gray-900"
+                      }`}>
                         {formatearMonedaArgentina(opc.precioNum)}
                       </span>
-
+                      
                       {opc.diferencia && (
                         <span className="block text-[10px] font-bold text-amber-600">
                           {opc.diferencia} más caro
@@ -461,14 +424,14 @@ export default function App() {
           )}
         </div>
 
-        {/* SECCIÓN TRASLADADA: Listas en memoria abajo de todo */}
+        {/* SECCIÓN ABAJO DE TODO: Listas cargadas + Leyenda total de artículos */}
         {archivosCargados.length > 0 && (
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mt-6">
             <div className="flex justify-between items-center mb-3">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
                 Listas cargadas en memoria ({archivosCargados.length}/6)
               </span>
-              <button
+              <button 
                 onClick={limpiarTodo}
                 className="text-xs font-bold text-red-500 active:text-red-700 bg-red-50 px-2 py-1 rounded-lg"
               >
@@ -476,22 +439,16 @@ export default function App() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-2">
+            {/* Listado de archivos individuales */}
+            <div className="grid grid-cols-1 gap-2 mb-3">
               {archivosCargados.map((archivo) => (
-                <div
-                  key={archivo.id}
-                  className="flex items-center justify-between bg-gray-50 p-2 rounded-xl border border-gray-150"
-                >
+                <div key={archivo.id} className="flex items-center justify-between bg-gray-50 p-2 rounded-xl border border-gray-150">
                   <div className="truncate pr-2">
-                    <p className="text-xs font-bold text-gray-600 truncate">
-                      {archivo.proveedor}
-                    </p>
-                    <p className="text-[9px] text-gray-400 truncate">
-                      {archivo.nombre}
-                    </p>
+                    <p className="text-xs font-bold text-gray-600 truncate">{archivo.proveedor}</p>
+                    <p className="text-[9px] text-gray-400 truncate">{archivo.nombre}</p>
                   </div>
-                  <button
-                    onClick={() => eliminarListaIndividual(archivo.id)}
+                  <button 
+                    onClick={() => eliminarListaIndividual(archivo.id)} 
                     className="text-xs font-black text-gray-400 hover:text-red-600 px-2 py-1"
                   >
                     ✕
@@ -499,8 +456,17 @@ export default function App() {
                 </div>
               ))}
             </div>
+
+            {/* Caja informativa de cantidad de artículos cargados */}
+            <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-2.5 text-center">
+              <p className="text-xs font-bold text-blue-800">
+                📊 Se cargaron un total de <span className="text-sm font-black text-blue-600">{productos.length.toLocaleString("es-AR")}</span> artículos para comparar.
+              </p>
+            </div>
+
           </div>
         )}
+
       </div>
     </div>
   );
