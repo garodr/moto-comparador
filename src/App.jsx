@@ -26,6 +26,8 @@ const detectarNombreProveedor = (nombreArchivo) => {
     "ROHAN",
     "CATALANO",
     "WSTANDARD",
+    "STANDARD",
+    "GIROLDI",
   ];
 
   const encontrado = proveedores.find((p) => textoLimpio.includes(p));
@@ -184,7 +186,7 @@ export default function App() {
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // NUEVO: Doble Margen de Ganancia
+  // Doble Margen de Ganancia
   const [gananciaA, setGananciaA] = useState(0);
   const [gananciaB, setGananciaB] = useState(0);
 
@@ -202,7 +204,8 @@ export default function App() {
 
     const archivosExcel = archivosLista.filter(
       (archivo) =>
-        (archivo.name.endsWith(".xlsx") || archivo.name.endsWith(".xls")) &&
+        (archivo.name.toLowerCase().endsWith(".xlsx") ||
+          archivo.name.toLowerCase().endsWith(".xls")) &&
         !archivo.name.startsWith("~$"),
     );
 
@@ -233,10 +236,20 @@ export default function App() {
 
       const promesaLectura = new Promise((resolve) => {
         const reader = new FileReader();
+
         reader.onload = (evt) => {
           try {
             const data = evt.target.result;
-            const workbook = XLSX.read(data, { type: "binary" });
+            let workbook;
+
+            // INTENTO DE LECTURA ROBUSTA HÍBRIDA (Soporta .xls binarios viejos y .xlsx nuevos)
+            try {
+              workbook = XLSX.read(data, { type: "binary" });
+            } catch {
+              const bytes = new Uint8Array(data);
+              workbook = XLSX.read(bytes, { type: "array" });
+            }
+
             const nombreHoja = workbook.SheetNames[0];
             const hoja = workbook.Sheets[nombreHoja];
 
@@ -271,9 +284,7 @@ export default function App() {
               return;
             }
 
-            const nombreProveedorLimpio = (Rivera = detectarNombreProveedor(
-              archivo.name,
-            ));
+            const nombreProveedorLimpio = detectarNombreProveedor(archivo.name);
             const idUnico = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
             const datosConProveedor = datos.map((item) => {
@@ -296,14 +307,20 @@ export default function App() {
               archivoInfo: {
                 id: idUnico,
                 nombre: archivo.name,
-                proveedor: rivera || nombreProveedorLimpio || "Desconocido",
+                proveedor: nombreProveedorLimpio,
               },
             });
           } catch {
             resolve({ error: `Error de formato en "${archivo.name}".` });
           }
         };
-        reader.readAsBinaryString(archivo);
+
+        // Si es un .xls viejo, se lee mejor con readAsArrayBuffer para no romper codificaciones
+        if (archivo.name.toLowerCase().endsWith(".xls")) {
+          reader.readAsArrayBuffer(archivo);
+        } else {
+          reader.readAsBinaryString(archivo);
+        }
       });
 
       const resultado = await promesaLectura;
@@ -344,7 +361,6 @@ export default function App() {
     setBusqueda("");
   };
 
-  // NUEVO: Guardar ambos márgenes de ganancia
   const guardarGanancias = () => {
     const valA = parseFloat(inputGananciaA);
     const valB = parseFloat(inputGananciaB);
@@ -462,16 +478,8 @@ export default function App() {
         {/* Botón de Carga */}
         {archivosCargados.length < 6 && (
           <div className="mb-4">
-            <label
-              className={`flex flex-col items-center justify-center w-full h-12 border border-dashed rounded-xl cursor-pointer transition-colors ${
-                darkMode
-                  ? "border-gray-700 bg-gray-800/50 active:bg-gray-800"
-                  : "border-blue-300 bg-blue-50/40 active:bg-blue-100/70"
-              }`}
-            >
-              <span
-                className={`text-xs font-bold ${darkMode ? "text-gray-300" : "text-blue-700"}`}
-              >
+            <label className="flex flex-col items-center justify-center w-full h-12 border border-dashed rounded-xl cursor-pointer transition-colors border-blue-300 bg-blue-50/40 active:bg-blue-100/70">
+              <span className="text-xs font-bold text-blue-700">
                 📂 Cargar carpeta con listas
               </span>
               <input
@@ -552,14 +560,12 @@ export default function App() {
                     </div>
 
                     <div className="text-right flex-shrink-0 space-y-0.5">
-                      {/* Costo Distribuidor */}
                       <span
                         className={`text-sm font-bold block ${opc.esElMasBarato ? "text-green-600" : darkMode ? "text-gray-400" : "text-gray-500"}`}
                       >
                         Costo: {formatearMonedaArgentina(opc.precioNum)}
                       </span>
 
-                      {/* NUEVO: Visualización simultánea de PVP A y PVP B */}
                       {gananciaA > 0 && opc.precioNum !== null && (
                         <span className="block text-xs font-black text-blue-500">
                           PVP A (+{gananciaA}%):{" "}
@@ -635,20 +641,18 @@ export default function App() {
               className={`border rounded-xl p-2.5 text-center ${darkMode ? "bg-blue-950/20 border-blue-900/50 text-blue-400" : "bg-blue-50/50 border-blue-100 text-blue-800"}`}
             >
               <p className="text-xs font-bold">
-                📊 Se cargaron{" "}
+                📊 Se cargaron un total de{" "}
                 <span className="text-sm font-black">
                   {productos.length.toLocaleString("es-AR")}
                 </span>{" "}
-                artículos.
+                artículos para comparar.
               </p>
             </div>
           </div>
         )}
       </div>
 
-      {/* ==========================================
-          MODAL: EDITAR DOBLE GANANCIA (A y B)
-          ========================================== */}
+      {/* MODAL: EDITAR DOBLE GANANCIA */}
       {modalGananciaAbierto && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
           <div
@@ -662,7 +666,6 @@ export default function App() {
             </p>
 
             <div className="space-y-4 mb-5">
-              {/* Bloque Ganancia A */}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
                   Ganancia A (PVP Mostrador)
@@ -678,7 +681,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Bloque Ganancia B */}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
                   Ganancia B (PVP Gremio / Taller)
@@ -727,7 +729,9 @@ export default function App() {
             <h3 className="text-sm font-black uppercase">
               Motolist Comparador
             </h3>
-            <p className="text-[11px] text-gray-400 mt-1 mb-4">Versión 2.5</p>
+            <p className="text-[11px] text-gray-400 mt-1 mb-4">
+              Versión 2.6 (Anti-Crash)
+            </p>
             <p className="text-xs leading-relaxed text-left mb-4">
               Herramienta inteligente de optimización de costos para repuestos
               de motos. Diseñada para unificar catálogos de proveedores en
