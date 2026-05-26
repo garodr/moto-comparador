@@ -799,7 +799,7 @@ export default function App() {
               Motolist Comparador
             </h3>
             <p className="text-[10px] text-gray-400 font-bold tracking-wider mt-0.5 mb-3">
-              Versión 3.0
+              Versión 1.0
             </p>
             <p className="text-xs leading-relaxed text-left mb-4 border-b pb-3 border-gray-700/20">
               Herramienta inteligente de optimización de costos para repuestos
