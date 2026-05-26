@@ -110,6 +110,7 @@ const agruparPorProducto = (itemsFiltrados) => {
     const precioFinalNum = parsearPrecio(precioRaw);
 
     const ofertaProveedor = {
+      idItemUnico: `${item.proveedorOrigen || "Desconocido"}-${codigo || Math.random()}`,
       proveedor: item.proveedorOrigen || "Desconocido",
       codigo: codigo !== "No disponible" ? codigo : null,
       precioNum: precioFinalNum,
@@ -186,17 +187,24 @@ export default function App() {
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // Doble Margen de Ganancia
+  // Modificación: Triple Margen de Ganancia
   const [gananciaA, setGananciaA] = useState(0);
   const [gananciaB, setGananciaB] = useState(0);
+  const [gananciaC, setGananciaC] = useState(0);
 
-  // Estados de Modales / Alertas
+  // Estados de Modales
   const [modalGananciaAbierto, setModalGananciaAbierto] = useState(false);
   const [modalAcercaDe, setModalAcercaDe] = useState(false);
+  const [modalConsultas, setModalConsultas] = useState(false);
 
-  // Inputs temporales para el Modal
+  // Inputs temporales para el Modal de 3 ganancias
   const [inputGananciaA, setInputGananciaA] = useState("0");
   const [inputGananciaB, setInputGananciaB] = useState("0");
+  const [inputGananciaC, setInputGananciaC] = useState("0");
+
+  // Estado para controlar qué tipo de ganancia está activa por CADA tarjeta de proveedor (`idItemUnico` -> 'A', 'B' o 'C')
+  const [gananciaSeleccionadaPorItem, setGananciaSeleccionadaPorItem] =
+    useState({});
 
   const leerCarpetaDeExcel = async (e) => {
     const archivosLista = Array.from(e.target.files);
@@ -211,7 +219,7 @@ export default function App() {
 
     if (archivosExcel.length === 0) {
       setErrores([
-        "No se encontraron archivos de Excel (.xlsx o .xls) válidos en la carpeta elegida.",
+        "No se encontraron archivos de Excel (.xlsx o .xls) válidos.",
       ]);
       e.target.value = "";
       return;
@@ -224,25 +232,18 @@ export default function App() {
 
     for (const archivo of archivosExcel) {
       if (nuevosArchivosCargados.length >= 6) {
-        listaErrores.push(
-          "Se alcanzó el límite máximo de 6 listas. Algunos archivos se omitieron.",
-        );
+        listaErrores.push("Se alcanzó el límite máximo de 6 listas.");
         break;
       }
-
-      if (nuevosArchivosCargados.some((a) => a.nombre === archivo.name)) {
+      if (nuevosArchivosCargados.some((a) => a.nombre === archivo.name))
         continue;
-      }
 
       const promesaLectura = new Promise((resolve) => {
         const reader = new FileReader();
-
         reader.onload = (evt) => {
           try {
             const data = evt.target.result;
             let workbook;
-
-            // INTENTO DE LECTURA ROBUSTA HÍBRIDA (Soporta .xls binarios viejos y .xlsx nuevos)
             try {
               workbook = XLSX.read(data, { type: "binary" });
             } catch {
@@ -252,7 +253,6 @@ export default function App() {
 
             const nombreHoja = workbook.SheetNames[0];
             const hoja = workbook.Sheets[nombreHoja];
-
             const filas = XLSX.utils.sheet_to_json(hoja, { header: 1 });
             if (filas.length === 0) {
               resolve({ error: `"${archivo.name}" está vacío.` });
@@ -263,7 +263,6 @@ export default function App() {
               fila.some((celda) => {
                 const textoCelda = normalizarTexto(celda);
                 return (
-                  textoCelda.includes("codigo de articulo") ||
                   textoCelda.includes("codigo") ||
                   textoCelda.includes("detalle") ||
                   textoCelda.includes("descripcion")
@@ -278,9 +277,7 @@ export default function App() {
             });
 
             if (datos.length === 0) {
-              resolve({
-                error: `"${archivo.name}" no tiene filas estructuradas.`,
-              });
+              resolve({ error: `"${archivo.name}" sin filas estructuradas.` });
               return;
             }
 
@@ -315,7 +312,6 @@ export default function App() {
           }
         };
 
-        // Si es un .xls viejo, se lee mejor con readAsArrayBuffer para no romper codificaciones
         if (archivo.name.toLowerCase().endsWith(".xls")) {
           reader.readAsArrayBuffer(archivo);
         } else {
@@ -324,9 +320,8 @@ export default function App() {
       });
 
       const resultado = await promesaLectura;
-      if (resultado.error) {
-        listaErrores.push(resultado.error);
-      } else if (resultado.productos) {
+      if (resultado.error) listaErrores.push(resultado.error);
+      else if (resultado.productos) {
         nuevosProductos = [...nuevosProductos, ...resultado.productos];
         nuevosArchivosCargados.push(resultado.archivoInfo);
       }
@@ -336,11 +331,7 @@ export default function App() {
       setProductos((prev) => [...prev, ...nuevosProductos]);
       setArchivosCargados(nuevosArchivosCargados);
     }
-
-    if (listaErrores.length > 0) {
-      setErrores(listaErrores);
-    }
-
+    if (listaErrores.length > 0) setErrores(listaErrores);
     e.target.value = "";
   };
 
@@ -359,22 +350,24 @@ export default function App() {
     setArchivosCargados([]);
     setErrores([]);
     setBusqueda("");
+    setGananciaSeleccionadaPorItem({});
   };
 
   const guardarGanancias = () => {
     const valA = parseFloat(inputGananciaA);
     const valB = parseFloat(inputGananciaB);
+    const valC = parseFloat(inputGananciaC);
     setGananciaA(isNaN(valA) || valA < 0 ? 0 : valA);
     setGananciaB(isNaN(valB) || valB < 0 ? 0 : valB);
+    setGananciaC(isNaN(valC) || valC < 0 ? 0 : valC);
     setModalGananciaAbierto(false);
   };
 
-  const abrirConsultasWhatsapp = () => {
-    window.open(
-      "https://wa.me/5493512345678?text=Hola!%20Tengo%20una%20consulta%20sobre%20Motolist",
-      "_blank",
-    );
-    setMenuAbierto(false);
+  const cambiarGananciaDeItem = (idItem, tipo) => {
+    setGananciaSeleccionadaPorItem((prev) => ({
+      ...prev,
+      [idItem]: tipo,
+    }));
   };
 
   const terminosBusqueda = useMemo(() => {
@@ -428,9 +421,9 @@ export default function App() {
               className={`w-full text-left p-2.5 text-xs font-bold rounded-xl flex items-center gap-2 ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-50"}`}
             >
               📈 <span>Editar ganancia</span>
-              {(gananciaA > 0 || gananciaB > 0) && (
-                <span className="ml-auto bg-blue-600 text-white px-1 py-0.5 text-[8px] rounded font-black">
-                  SET
+              {(gananciaA > 0 || gananciaB > 0 || gananciaC > 0) && (
+                <span className="ml-auto bg-blue-600 text-white px-1.5 py-0.5 text-[8px] rounded font-black">
+                  3-SET
                 </span>
               )}
             </button>
@@ -443,7 +436,10 @@ export default function App() {
             </button>
 
             <button
-              onClick={abrirConsultasWhatsapp}
+              onClick={() => {
+                setModalConsultas(true);
+                setMenuAbierto(false);
+              }}
               className={`w-full text-left p-2.5 text-xs font-bold rounded-xl flex items-center gap-2 ${darkMode ? "hover:bg-gray-700" : "hover:bg-gray-50"}`}
             >
               💬 <span>Consultas</span>
@@ -478,8 +474,16 @@ export default function App() {
         {/* Botón de Carga */}
         {archivosCargados.length < 6 && (
           <div className="mb-4">
-            <label className="flex flex-col items-center justify-center w-full h-12 border border-dashed rounded-xl cursor-pointer transition-colors border-blue-300 bg-blue-50/40 active:bg-blue-100/70">
-              <span className="text-xs font-bold text-blue-700">
+            <label
+              className={`flex flex-col items-center justify-center w-full h-12 border border-dashed rounded-xl cursor-pointer transition-colors ${
+                darkMode
+                  ? "border-gray-700 bg-gray-800/50"
+                  : "border-blue-300 bg-blue-50/40"
+              }`}
+            >
+              <span
+                className={`text-xs font-bold ${darkMode ? "text-gray-300" : "text-blue-700"}`}
+              >
                 📂 Cargar carpeta con listas
               </span>
               <input
@@ -511,7 +515,7 @@ export default function App() {
               onChange={(e) => setBusqueda(e.target.value)}
               className={`w-full p-3.5 rounded-xl border text-base shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 darkMode
-                  ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                  ? "bg-gray-800 border-gray-700 text-white"
                   : "bg-white border-gray-300 text-gray-800"
               }`}
             />
@@ -534,63 +538,92 @@ export default function App() {
               <div
                 className={`rounded-xl border divide-y overflow-hidden ${darkMode ? "bg-gray-900/50 border-gray-700 divide-gray-700" : "bg-gray-50 border-gray-100 divide-gray-100"}`}
               >
-                {grupo.opciones.map((opc) => (
-                  <div
-                    key={`${opc.proveedor}-${opc.codigo}`}
-                    className={`p-3 flex items-center justify-between transition-colors ${opc.esElMasBarato ? (darkMode ? "bg-green-950/40" : "bg-green-50/70") : ""}`}
-                  >
-                    <div className="truncate pr-2">
-                      <div className="flex items-center gap-2 truncate">
+                {grupo.opciones.map((opc) => {
+                  // Qué ganancia tiene activa este renglón (Por defecto es la 'A')
+                  const tipoGananciaActiva =
+                    gananciaSeleccionadaPorItem[opc.idItemUnico] || "A";
+
+                  // Calculamos el valor final de la imposición correspondiente
+                  let porcentajeAplicar = gananciaA;
+                  if (tipoGananciaActiva === "B") porcentajeAplicar = gananciaB;
+                  if (tipoGananciaActiva === "C") porcentajeAplicar = gananciaC;
+
+                  const precioFinalConGanancia =
+                    opc.precioNum !== null
+                      ? opc.precioNum * (1 + porcentajeAplicar / 100)
+                      : null;
+
+                  return (
+                    <div
+                      key={opc.idItemUnico}
+                      className={`p-3 flex items-center justify-between transition-colors ${opc.esElMasBarato ? (darkMode ? "bg-green-950/40" : "bg-green-50/70") : ""}`}
+                    >
+                      {/* LADO IZQUIERDO: Proveedor, info y selectores A, B, C */}
+                      <div className="truncate pr-2 space-y-1.5">
+                        <div className="flex items-center gap-2 truncate">
+                          <span
+                            className={`text-sm font-bold truncate ${darkMode ? "text-gray-200" : "text-gray-700"}`}
+                          >
+                            {opc.proveedor}
+                          </span>
+                          {opc.esElMasBarato && (
+                            <span className="bg-green-600 text-white font-extrabold px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider">
+                              Recomendado ✅
+                            </span>
+                          )}
+                        </div>
+
+                        {/* BOTONES INTERACTIVOS DE TRIPLE GANANCIA */}
+                        <div className="flex items-center gap-1.5">
+                          {["A", "B", "C"].map((letra) => {
+                            const esEsta = tipoGananciaActiva === letra;
+                            return (
+                              <button
+                                key={letra}
+                                onClick={() =>
+                                  cambiarGananciaDeItem(opc.idItemUnico, letra)
+                                }
+                                className={`w-6 h-6 rounded-full text-[10px] font-black transition-all shadow-xs border ${
+                                  esEsta
+                                    ? "bg-blue-600 text-white border-blue-600 scale-105"
+                                    : darkMode
+                                      ? "bg-gray-800 text-gray-400 border-gray-700"
+                                      : "bg-white text-gray-500 border-gray-300 hover:bg-gray-100"
+                                }`}
+                              >
+                                {letra}
+                              </button>
+                            );
+                          })}
+                          {opc.codigo && (
+                            <span className="text-[10px] font-mono text-gray-400 ml-1.5">
+                              Cód: {opc.codigo}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* LADO DERECHO: Precios Mutables */}
+                      <div className="text-right flex-shrink-0 space-y-0.5">
                         <span
-                          className={`text-sm font-bold truncate ${darkMode ? "text-gray-200" : "text-gray-700"}`}
+                          className={`text-base font-black block ${opc.esElMasBarato ? "text-green-600" : darkMode ? "text-white" : "text-gray-900"}`}
                         >
-                          {opc.proveedor}
+                          {formatearMonedaArgentina(precioFinalConGanancia)}
                         </span>
-                        {opc.esElMasBarato && (
-                          <span className="bg-green-600 text-white font-extrabold px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider">
-                            Recomendado ✅
+
+                        <span className="block text-[10px] text-gray-400 font-medium">
+                          Tarifa {tipoGananciaActiva} (+{porcentajeAplicar}%)
+                        </span>
+
+                        {opc.diferencia && (
+                          <span className="block text-[10px] font-bold text-amber-500">
+                            {opc.diferencia} más caro
                           </span>
                         )}
                       </div>
-                      {opc.codigo && (
-                        <span className="block text-[10px] font-mono text-gray-400 mt-0.5">
-                          Cód: {opc.codigo}
-                        </span>
-                      )}
                     </div>
-
-                    <div className="text-right flex-shrink-0 space-y-0.5">
-                      <span
-                        className={`text-sm font-bold block ${opc.esElMasBarato ? "text-green-600" : darkMode ? "text-gray-400" : "text-gray-500"}`}
-                      >
-                        Costo: {formatearMonedaArgentina(opc.precioNum)}
-                      </span>
-
-                      {gananciaA > 0 && opc.precioNum !== null && (
-                        <span className="block text-xs font-black text-blue-500">
-                          PVP A (+{gananciaA}%):{" "}
-                          {formatearMonedaArgentina(
-                            opc.precioNum * (1 + gananciaA / 100),
-                          )}
-                        </span>
-                      )}
-                      {gananciaB > 0 && opc.precioNum !== null && (
-                        <span className="block text-xs font-black text-purple-500">
-                          PVP B (+{gananciaB}%):{" "}
-                          {formatearMonedaArgentina(
-                            opc.precioNum * (1 + gananciaB / 100),
-                          )}
-                        </span>
-                      )}
-
-                      {opc.diferencia && (
-                        <span className="block text-[10px] font-bold text-amber-500">
-                          {opc.diferencia} más caro
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -637,62 +670,70 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <div
-              className={`border rounded-xl p-2.5 text-center ${darkMode ? "bg-blue-950/20 border-blue-900/50 text-blue-400" : "bg-blue-50/50 border-blue-100 text-blue-800"}`}
-            >
-              <p className="text-xs font-bold">
-                📊 Se cargaron un total de{" "}
-                <span className="text-sm font-black">
-                  {productos.length.toLocaleString("es-AR")}
-                </span>{" "}
-                artículos para comparar.
-              </p>
-            </div>
           </div>
         )}
       </div>
 
-      {/* MODAL: EDITAR DOBLE GANANCIA */}
+      {/* ==========================================
+          MODALES FLOTANTES 
+          ========================================== */}
+
+      {/* MODAL: EDITAR TRIPLE GANANCIA */}
       {modalGananciaAbierto && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
           <div
             className={`w-full max-w-xs rounded-2xl p-5 shadow-2xl ${darkMode ? "bg-gray-800 text-white" : "bg-white text-gray-800"}`}
           >
             <h3 className="text-sm font-black uppercase tracking-wide mb-1">
-              📈 Ajustar Margen Doble
+              📈 Margen de Ganancias
             </h3>
             <p className="text-[11px] text-gray-400 mb-4">
-              Configurá dos porcentajes de recargo distintos para tus repuestos.
+              Configurá las tres listas de recargo independientes.
             </p>
 
-            <div className="space-y-4 mb-5">
+            <div className="space-y-3 mb-5">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
-                  Ganancia A (PVP Mostrador)
+                <label className="block text-[9px] font-black uppercase tracking-wider text-gray-400 mb-0.5">
+                  Ganancia A (PVP General / Base)
                 </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
                     value={inputGananciaA}
                     onChange={(e) => setInputGananciaA(e.target.value)}
-                    className={`w-full p-2 rounded-xl text-center font-bold border text-base focus:outline-none ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-gray-50 border-gray-300"}`}
+                    className={`w-full p-1.5 rounded-lg text-center font-bold border text-sm ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-gray-50 border-gray-300"}`}
                   />
-                  <span className="text-base font-bold text-blue-500">%</span>
+                  <span className="text-sm font-bold text-blue-500">%</span>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
-                  Ganancia B (PVP Gremio / Taller)
+                <label className="block text-[9px] font-black uppercase tracking-wider text-gray-400 mb-0.5">
+                  Ganancia B (Taller / Gremio)
                 </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
                     value={inputGananciaB}
                     onChange={(e) => setInputGananciaB(e.target.value)}
-                    className={`w-full p-2 rounded-xl text-center font-bold border text-base focus:outline-none ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-gray-50 border-gray-300"}`}
+                    className={`w-full p-1.5 rounded-lg text-center font-bold border text-sm ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-gray-50 border-gray-300"}`}
                   />
-                  <span className="text-base font-bold text-purple-500">%</span>
+                  <span className="text-sm font-bold text-purple-500">%</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[9px] font-black uppercase tracking-wider text-gray-400 mb-0.5">
+                  Ganancia C (Lista Gremio Mayorista)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={inputGananciaC}
+                    onChange={(e) => setInputGananciaC(e.target.value)}
+                    className={`w-full p-1.5 rounded-lg text-center font-bold border text-sm ${darkMode ? "bg-gray-700 border-gray-600 text-white" : "bg-gray-50 border-gray-300"}`}
+                  />
+                  <span className="text-sm font-bold text-emerald-500">%</span>
                 </div>
               </div>
             </div>
@@ -715,6 +756,34 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL: CONSULTAS */}
+      {modalConsultas && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div
+            className={`w-full max-w-xs rounded-2xl p-5 shadow-2xl text-center ${darkMode ? "bg-gray-800 text-white" : "bg-white text-gray-800"}`}
+          >
+            <span className="text-3xl mb-1 block">💬</span>
+            <h3 className="text-sm font-black uppercase tracking-wide mb-2">
+              Canal de Consultas
+            </h3>
+            <p className="text-xs text-gray-400 mb-3">
+              Escribinos ante cualquier duda o soporte técnico a:
+            </p>
+            <div
+              className={`p-2.5 rounded-xl font-mono text-xs font-bold select-all break-all ${darkMode ? "bg-gray-900 text-blue-400" : "bg-blue-50 text-blue-700"}`}
+            >
+              betelgeusesoftware@gmail.com
+            </div>
+            <button
+              onClick={() => setModalConsultas(false)}
+              className="w-full mt-4 p-2 text-xs font-bold bg-blue-600 text-white rounded-xl"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: ACERCA DE */}
       {modalAcercaDe && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
@@ -729,17 +798,26 @@ export default function App() {
             <h3 className="text-sm font-black uppercase">
               Motolist Comparador
             </h3>
-            <p className="text-[11px] text-gray-400 mt-1 mb-4">
-              Versión 2.6 (Anti-Crash)
+            <p className="text-[10px] text-gray-400 font-bold tracking-wider mt-0.5 mb-3">
+              Versión 3.0
             </p>
-            <p className="text-xs leading-relaxed text-left mb-4">
+            <p className="text-xs leading-relaxed text-left mb-4 border-b pb-3 border-gray-700/20">
               Herramienta inteligente de optimización de costos para repuestos
               de motos. Diseñada para unificar catálogos de proveedores en
               segundos y garantizar el mejor precio.
             </p>
+            <p className="text-xs font-bold text-gray-400 text-center">
+              Desarrollado por:
+              <br />
+              <span
+                className={`text-sm font-black ${darkMode ? "text-white" : "text-gray-900"}`}
+              >
+                Betelgeuse Software
+              </span>
+            </p>
             <button
               onClick={() => setModalAcercaDe(false)}
-              className="w-full p-2 text-xs font-bold bg-blue-600 text-white rounded-xl"
+              className="w-full mt-4 p-2 text-xs font-bold bg-blue-600 text-white rounded-xl"
             >
               Entendido
             </button>
