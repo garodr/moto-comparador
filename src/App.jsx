@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 
 // IMPORTACIÓN ÚNICA: Logo unificado de la app
@@ -104,7 +104,6 @@ const agruparPorProducto = (itemsFiltrados) => {
         ? detalle.replace(/\s*\([^)]*\)\s*$/, "").trim()
         : "Repuesto sin descripción";
 
-    // CORREGIDO: Ahora usa correctamente la variable detalleLimpioBase
     const claveGrupo = `DET-${normalizarTexto(detalleLimpioBase)}`;
 
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
@@ -188,20 +187,35 @@ export default function App() {
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // Triple Margen de Ganancia
-  const [gananciaA, setGananciaA] = useState(0);
-  const [gananciaB, setGananciaB] = useState(0);
-  const [gananciaC, setGananciaC] = useState(0);
+  // TRUCO: Al arrancar, la app va a buscar al almacenamiento del teléfono si ya existen las ganancias guardadas.
+  const [gananciaA, setGananciaA] = useState(() => {
+    const guardado = localStorage.getItem("moto_ganancia_A");
+    return guardado ? parseFloat(guardado) : 0;
+  });
+  const [gananciaB, setGananciaB] = useState(() => {
+    const guardado = localStorage.getItem("moto_ganancia_B");
+    return guardado ? parseFloat(guardado) : 0;
+  });
+  const [gananciaC, setGananciaC] = useState(() => {
+    const guardado = localStorage.getItem("moto_ganancia_C");
+    return guardado ? parseFloat(guardado) : 0;
+  });
 
   // Estados de Modales
   const [modalGananciaAbierto, setModalGananciaAbierto] = useState(false);
   const [modalAcercaDe, setModalAcercaDe] = useState(false);
   const [modalConsultas, setModalConsultas] = useState(false);
 
-  // Inputs temporales para el Modal
-  const [inputGananciaA, setInputGananciaA] = useState("0");
-  const [inputGananciaB, setInputGananciaB] = useState("0");
-  const [inputGananciaC, setInputGananciaC] = useState("0");
+  // Inputs temporales para el Modal (se inician con lo que hay guardado)
+  const [inputGananciaA, setInputGananciaA] = useState(
+    () => localStorage.getItem("moto_ganancia_A") || "0",
+  );
+  const [inputGananciaB, setInputGananciaB] = useState(
+    () => localStorage.getItem("moto_ganancia_B") || "0",
+  );
+  const [inputGananciaC, setInputGananciaC] = useState(
+    () => localStorage.getItem("moto_ganancia_C") || "0",
+  );
 
   // Estado para controlar qué tipo de ganancia está activa por CADA tarjeta de proveedor
   const [gananciaSeleccionadaPorItem, setGananciaSeleccionadaPorItem] =
@@ -354,13 +368,25 @@ export default function App() {
     setGananciaSeleccionadaPorItem({});
   };
 
+  // GUARDADO PERSISTENTE EN EL TELÉFONO
   const guardarGanancias = () => {
     const valA = parseFloat(inputGananciaA);
     const valB = parseFloat(inputGananciaB);
     const valC = parseFloat(inputGananciaC);
-    setGananciaA(isNaN(valA) || valA < 0 ? 0 : valA);
-    setGananciaB(isNaN(valB) || valB < 0 ? 0 : valB);
-    setGananciaC(isNaN(valC) || valC < 0 ? 0 : valC);
+
+    const finalA = isNaN(valA) || valA < 0 ? 0 : valA;
+    const finalB = isNaN(valB) || valB < 0 ? 0 : valB;
+    const finalC = isNaN(valC) || valC < 0 ? 0 : valC;
+
+    setGananciaA(finalA);
+    setGananciaB(finalB);
+    setGananciaC(finalC);
+
+    // Guardamos en la memoria interna del teléfono
+    localStorage.setItem("moto_ganancia_A", finalA.toString());
+    localStorage.setItem("moto_ganancia_B", finalB.toString());
+    localStorage.setItem("moto_ganancia_C", finalC.toString());
+
     setModalGananciaAbierto(false);
   };
 
@@ -791,7 +817,7 @@ export default function App() {
               Motolist Comparador
             </h3>
             <p className="text-[10px] text-gray-400 font-bold tracking-wider mt-0.5 mb-3">
-              Versión 3.1
+              Versión 3.2
             </p>
             <p className="text-xs leading-relaxed text-left mb-4 border-b pb-3 border-gray-700/20">
               Herramienta inteligente de optimización de costos para repuestos
