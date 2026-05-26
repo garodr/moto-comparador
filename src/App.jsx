@@ -104,7 +104,8 @@ const agruparPorProducto = (itemsFiltrados) => {
         ? detalle.replace(/\s*\([^)]*\)\s*$/, "").trim()
         : "Repuesto sin descripción";
 
-    const claveGrupo = `DET-${normalizarTexto(detalleLinterBase)}`;
+    // CORREGIDO: Ahora usa correctamente la variable detalleLimpioBase
+    const claveGrupo = `DET-${normalizarTexto(detalleLimpioBase)}`;
 
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
     const precioFinalNum = parsearPrecio(precioRaw);
@@ -564,7 +565,6 @@ export default function App() {
                           >
                             {opc.proveedor}
                           </span>
-                          {/* CAMBIO: Solo se muestra el tilde si es recomendado */}
                           {opc.esElMasBarato && (
                             <span className="text-sm">✅</span>
                           )}
@@ -607,7 +607,6 @@ export default function App() {
                           {formatearMonedaArgentina(precioFinalConGanancia)}
                         </span>
 
-                        {/* CAMBIO: Debajo del precio no figura nada de tarifas, si es recomendado se inyecta la palabra abajo */}
                         {opc.esElMasBarato ? (
                           <span className="text-[10px] font-extrabold text-green-600 tracking-wide uppercase mt-0.5">
                             Recomendado
