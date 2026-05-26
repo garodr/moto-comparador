@@ -104,7 +104,7 @@ const agruparPorProducto = (itemsFiltrados) => {
         ? detalle.replace(/\s*\([^)]*\)\s*$/, "").trim()
         : "Repuesto sin descripción";
 
-    const claveGrupo = `DET-${normalizarTexto(detalleLimpioBase)}`;
+    const claveGrupo = `DET-${normalizarTexto(detalleLinterBase)}`;
 
     const precioRaw = obtenerValorFlexible(item, "PRECIO FINAL");
     const precioFinalNum = parsearPrecio(precioRaw);
@@ -187,7 +187,7 @@ export default function App() {
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // Modificación: Triple Margen de Ganancia
+  // Triple Margen de Ganancia
   const [gananciaA, setGananciaA] = useState(0);
   const [gananciaB, setGananciaB] = useState(0);
   const [gananciaC, setGananciaC] = useState(0);
@@ -197,12 +197,12 @@ export default function App() {
   const [modalAcercaDe, setModalAcercaDe] = useState(false);
   const [modalConsultas, setModalConsultas] = useState(false);
 
-  // Inputs temporales para el Modal de 3 ganancias
+  // Inputs temporales para el Modal
   const [inputGananciaA, setInputGananciaA] = useState("0");
   const [inputGananciaB, setInputGananciaB] = useState("0");
   const [inputGananciaC, setInputGananciaC] = useState("0");
 
-  // Estado para controlar qué tipo de ganancia está activa por CADA tarjeta de proveedor (`idItemUnico` -> 'A', 'B' o 'C')
+  // Estado para controlar qué tipo de ganancia está activa por CADA tarjeta de proveedor
   const [gananciaSeleccionadaPorItem, setGananciaSeleccionadaPorItem] =
     useState({});
 
@@ -539,11 +539,9 @@ export default function App() {
                 className={`rounded-xl border divide-y overflow-hidden ${darkMode ? "bg-gray-900/50 border-gray-700 divide-gray-700" : "bg-gray-50 border-gray-100 divide-gray-100"}`}
               >
                 {grupo.opciones.map((opc) => {
-                  // Qué ganancia tiene activa este renglón (Por defecto es la 'A')
                   const tipoGananciaActiva =
                     gananciaSeleccionadaPorItem[opc.idItemUnico] || "A";
 
-                  // Calculamos el valor final de la imposición correspondiente
                   let porcentajeAplicar = gananciaA;
                   if (tipoGananciaActiva === "B") porcentajeAplicar = gananciaB;
                   if (tipoGananciaActiva === "C") porcentajeAplicar = gananciaC;
@@ -558,22 +556,20 @@ export default function App() {
                       key={opc.idItemUnico}
                       className={`p-3 flex items-center justify-between transition-colors ${opc.esElMasBarato ? (darkMode ? "bg-green-950/40" : "bg-green-50/70") : ""}`}
                     >
-                      {/* LADO IZQUIERDO: Proveedor, info y selectores A, B, C */}
+                      {/* LADO IZQUIERDO: Proveedor y selectores A, B, C */}
                       <div className="truncate pr-2 space-y-1.5">
-                        <div className="flex items-center gap-2 truncate">
+                        <div className="flex items-center gap-1.5 truncate">
                           <span
                             className={`text-sm font-bold truncate ${darkMode ? "text-gray-200" : "text-gray-700"}`}
                           >
                             {opc.proveedor}
                           </span>
+                          {/* CAMBIO: Solo se muestra el tilde si es recomendado */}
                           {opc.esElMasBarato && (
-                            <span className="bg-green-600 text-white font-extrabold px-1.5 py-0.5 rounded-md text-[9px] uppercase tracking-wider">
-                              Recomendado ✅
-                            </span>
+                            <span className="text-sm">✅</span>
                           )}
                         </div>
 
-                        {/* BOTONES INTERACTIVOS DE TRIPLE GANANCIA */}
                         <div className="flex items-center gap-1.5">
                           {["A", "B", "C"].map((letra) => {
                             const esEsta = tipoGananciaActiva === letra;
@@ -603,23 +599,24 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* LADO DERECHO: Precios Mutables */}
-                      <div className="text-right flex-shrink-0 space-y-0.5">
+                      {/* LADO DERECHO: Precios limpios */}
+                      <div className="text-right flex-shrink-0 flex flex-col justify-center">
                         <span
                           className={`text-base font-black block ${opc.esElMasBarato ? "text-green-600" : darkMode ? "text-white" : "text-gray-900"}`}
                         >
                           {formatearMonedaArgentina(precioFinalConGanancia)}
                         </span>
 
-                        <span className="block text-[10px] text-gray-400 font-medium">
-                          Tarifa {tipoGananciaActiva} (+{porcentajeAplicar}%)
-                        </span>
-
-                        {opc.diferencia && (
-                          <span className="block text-[10px] font-bold text-amber-500">
+                        {/* CAMBIO: Debajo del precio no figura nada de tarifas, si es recomendado se inyecta la palabra abajo */}
+                        {opc.esElMasBarato ? (
+                          <span className="text-[10px] font-extrabold text-green-600 tracking-wide uppercase mt-0.5">
+                            Recomendado
+                          </span>
+                        ) : opc.diferencia ? (
+                          <span className="text-[10px] font-bold text-amber-500 mt-0.5">
                             {opc.diferencia} más caro
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -673,10 +670,6 @@ export default function App() {
           </div>
         )}
       </div>
-
-      {/* ==========================================
-          MODALES FLOTANTES 
-          ========================================== */}
 
       {/* MODAL: EDITAR TRIPLE GANANCIA */}
       {modalGananciaAbierto && (
@@ -799,7 +792,7 @@ export default function App() {
               Motolist Comparador
             </h3>
             <p className="text-[10px] text-gray-400 font-bold tracking-wider mt-0.5 mb-3">
-              Versión 1.0
+              Versión 3.1
             </p>
             <p className="text-xs leading-relaxed text-left mb-4 border-b pb-3 border-gray-700/20">
               Herramienta inteligente de optimización de costos para repuestos
